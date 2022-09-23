@@ -1,0 +1,7 @@
+
+# editors
+.idea
+
+# misc
+.autoenv.zsh
+.autoenv_leave.zsh
