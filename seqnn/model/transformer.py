@@ -5,7 +5,13 @@ import torch.nn as nn
 
 class GenerativeTransformerBlock(nn.Module):
     def __init__(
-        self, max_seq_len, num_features, num_heads, num_hidden_mlp=512, dropout=0.1
+        self,
+        max_seq_len,
+        num_features,
+        num_heads,
+        num_hidden_mlp=512,
+        dropout=0.1,
+        layernorm_last=False,
     ):
         super().__init__()
         self.self_attention = nn.MultiheadAttention(
@@ -14,24 +20,33 @@ class GenerativeTransformerBlock(nn.Module):
         self.create_attention_mask(max_seq_len)
         self.mlp = nn.Sequential(
             nn.Linear(num_features, num_hidden_mlp),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(num_hidden_mlp, num_features),
         )
         self.ln1 = nn.LayerNorm(num_features)
         self.ln2 = nn.LayerNorm(num_features)
+        self.layernorm_last = layernorm_last
 
     def create_attention_mask(self, max_seq_len):
         m = max_seq_len
-        not_allowed = torch.triu(torch.ones(m, m)) - torch.diag(torch.ones(m))
-        self.register_buffer("attention_mask", not_allowed > 0)
+        allowed = torch.tril(torch.ones(m, m)) > 0
+        self.register_buffer("attention_mask", ~allowed)
 
     def forward(self, x):
         seq_len = x.shape[1]
         mask = self.attention_mask[:seq_len, :seq_len]
-        output, _ = self.self_attention(x, x, x, attn_mask=mask, need_weights=False)
-        x = self.ln1(x + output)
-        x = self.ln2(x + self.mlp(x))
+        if self.layernorm_last:
+            # the original formulation with layer norm applied after attention/mlp
+            output, _ = self.self_attention(x, x, x, attn_mask=mask, need_weights=False)
+            x = self.ln1(x + output)
+            x = self.ln2(x + self.mlp(x))
+        else:
+            # alternative formulation where the layer norm is applied 'inside' the residual block
+            x = self.ln1(x)
+            output, _ = self.self_attention(x, x, x, attn_mask=mask, need_weights=False)
+            x = x + output
+            x = x + self.mlp(self.ln2(x))
         return x
 
 
@@ -45,8 +60,10 @@ class GenerativeTransformer(nn.Module):
         num_heads=4,
         num_hidden_mlp=1024,
         dropout=0.1,
+        layernorm_last=False,
     ):
         """
+        TODO CHECK THIS DOC
         Args:
           vocab_size: Number of tokens in the vocabulary.
           n_blocks: Number of EncoderBlock blocks.
@@ -56,7 +73,7 @@ class GenerativeTransformer(nn.Module):
           dropout: Dropout level used in DecoderBlock.
         """
         super().__init__()
-        # max_tgt_len = MAX_LENGTH + 1 # +1 due to SOS token
+        self.memory_len = max_seq_len
         self.embedding = nn.Embedding(
             num_embeddings=vocab_size, embedding_dim=num_features
         )
@@ -70,20 +87,23 @@ class GenerativeTransformer(nn.Module):
                     num_heads,
                     num_hidden_mlp=num_hidden_mlp,
                     dropout=dropout,
+                    layernorm_last=layernorm_last,
                 )
                 for _ in range(num_blocks)
             ]
         )
+        self.ln = nn.LayerNorm(num_features)
         self.readout = nn.Linear(num_features, vocab_size)
         self.log_softmax = torch.nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
+        assert x.ndim == 2
         x = self.embedding(x)
         x = self.positional_encoding(x)
         x = self.dropout(x)
         for block in self.blocks:
             x = block(x)
-        logits = self.readout(x)
+        logits = self.readout(self.ln(x))
         return logits
         # return self.log_softmax(logits)
 
