@@ -9,7 +9,7 @@ class GenerativeTransformerBlock(nn.Module):
         max_seq_len,
         num_features,
         num_heads,
-        num_hidden_mlp=512,
+        num_hidden_ff=1024,
         dropout=0.1,
         layernorm_last=False,
     ):
@@ -19,10 +19,10 @@ class GenerativeTransformerBlock(nn.Module):
         )
         self.create_attention_mask(max_seq_len)
         self.mlp = nn.Sequential(
-            nn.Linear(num_features, num_hidden_mlp),
+            nn.Linear(num_features, num_hidden_ff),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(num_hidden_mlp, num_features),
+            nn.Linear(num_hidden_ff, num_features),
         )
         self.ln1 = nn.LayerNorm(num_features)
         self.ln2 = nn.LayerNorm(num_features)
@@ -56,28 +56,38 @@ class GenerativeTransformer(nn.Module):
         vocab_size,
         max_seq_len,
         num_blocks=4,
-        num_features=256,
-        num_heads=4,
-        num_hidden_mlp=1024,
+        num_features=1024,
+        num_heads=8,
+        num_hidden_ff=1024,
         dropout=0.1,
         layernorm_last=False,
+        learn_pos_encoding=True,
+        reverse_pos_encoding=False,
     ):
         """
-        TODO CHECK THIS DOC
         Args:
-          vocab_size: Number of tokens in the vocabulary.
-          n_blocks: Number of EncoderBlock blocks.
-          n_features: Number of features to be used for word embedding and further in all layers of the decoder.
-          n_heads: Number of attention heads inside the DecoderBlock.
-          n_hidden: Number of hidden units in the Feedforward block of DecoderBlock.
-          dropout: Dropout level used in DecoderBlock.
+            vocab_size: Number of tokens in the vocabulary.
+            max_seq_len: Maximum sequence length (i.e. size of the look-back memory) of the model.
+            num_blocks: Number of transformer blocks.
+            num_features: Number of features to be used for word embedding and further in all layers of the decoder.
+                Must be divisible by num_heads.
+            num_heads: Number of attention heads inside the transformer block.
+            num_hidden_: Number of hidden units in the feedforward layer of the transformer block.
+            dropout: Dropout level used in the transformer block.
         """
         super().__init__()
         self.memory_len = max_seq_len
         self.embedding = nn.Embedding(
             num_embeddings=vocab_size, embedding_dim=num_features
         )
-        self.positional_encoding = PositionalEncoding(num_features, max_seq_len)
+        if learn_pos_encoding:
+            self.positional_encoding = PositionalEncodingLearnable(
+                num_features, max_seq_len, reverse=reverse_pos_encoding
+            )
+        else:
+            self.positional_encoding = PositionalEncoding(
+                num_features, max_seq_len, reverse=reverse_pos_encoding
+            )
         self.dropout = nn.Dropout(dropout)
         self.blocks = nn.ModuleList(
             [
@@ -85,7 +95,7 @@ class GenerativeTransformer(nn.Module):
                     max_seq_len,
                     num_features,
                     num_heads,
-                    num_hidden_mlp=num_hidden_mlp,
+                    num_hidden_ff=num_hidden_ff,
                     dropout=dropout,
                     layernorm_last=layernorm_last,
                 )
@@ -114,7 +124,7 @@ class PositionalEncoding(nn.Module):
     See https://nlp.seas.harvard.edu/2018/04/03/attention.html for more detail.
     """
 
-    def __init__(self, num_features, max_len):
+    def __init__(self, num_features, max_len, reverse=False):
         super().__init__()
         assert (num_features % 2) == 0, "num_features should be an even number."
         pe = torch.zeros(max_len, num_features)
@@ -126,6 +136,28 @@ class PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
         self.register_buffer("positional_encoding", pe)
+        self.reverse = reverse
 
     def forward(self, x):
-        return x + self.positional_encoding[:, : x.size(1), :]
+        seq_len = x.size(1)
+        if self.reverse:
+            return (x.flip(1) + self.positional_encoding[:, :seq_len, :]).flip(1)
+        return x + self.positional_encoding[:, :seq_len, :]
+
+
+class PositionalEncodingLearnable(nn.Module):
+    def __init__(self, num_features, max_len, scale_init=0.1, reverse=False):
+        super().__init__()
+        assert (num_features % 2) == 0, "num_features should be an even number."
+        self.positional_encoding = torch.nn.Embedding(max_len, num_features)
+        self.reverse = reverse
+
+    def forward(self, x):
+        seq_len = x.size(1)
+        position = torch.arange(0, seq_len, dtype=torch.long, device="cpu").unsqueeze(0)
+        encoding = self.positional_encoding(position)
+        return x + encoding
+        # TODO: implement the reverse logic
+        # if self.reverse:
+        #    return (x.flip(1) + self.positional_encoding[:, : x.size(1), :]).flip(1)
+        # return x + self.positional_encoding[:, : x.size(1), :]
