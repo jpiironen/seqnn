@@ -45,3 +45,19 @@ class LikGaussian(Likelihood):
     def quantile(self, model_output, prob):
         mean, scale = self.split_model_output(model_output)
         return torch.distributions.Normal(mean, scale).icdf(prob)
+
+
+class LikCategorical(Likelihood):
+    def __init__(self, num_classes):
+        super().__init__()
+        self.num_classes = num_classes
+
+    def get_num_parameters(self):
+        return self.num_classes
+
+    def get_loss(self, model_output, target):
+        loss = -torch.distributions.Categorical(logits=model_output).log_prob(target)
+        return loss
+
+    def sample(self, model_output):
+        return torch.distributions.Categorical(logits=model_output).sample()
