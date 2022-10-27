@@ -9,10 +9,7 @@ class Likelihood:
     def get_num_parameters(self):
         raise NotImplementedError
 
-    def get_loss(self, model_output, target, **kwargs):
-        raise NotImplementedError
-
-    def split_model_output(self, x):
+    def get_loss(self, model_output, target):
         raise NotImplementedError
 
     def sample(self, model_output):
