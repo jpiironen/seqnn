@@ -115,7 +115,28 @@ class GenerativeTransformer(nn.Module):
             x = block(x)
         logits = self.readout(self.ln(x))
         return logits
-        # return self.log_softmax(logits)
+
+    @torch.no_grad()
+    def generate(self, x, max_new_tokens, temperature=1.0, sample=False, top_k=None):
+        '''
+        This function is a modified version of 
+        https://github.com/karpathy/minGPT/blob/7218bcfa527c65f164de791099de715b81a95106/mingpt/model.py#L283
+        '''
+        for _ in range(max_new_tokens):
+            # if the sequence length is too large, we need to crop it to the memory length of the model
+            x_crop = x if x.shape[1] <= self.memory_len else x[:, -self.memory_len :]
+            logits = self(x_crop)
+            logits = logits[:, -1, :] / temperature
+            if top_k is not None:
+                v, _ = torch.topk(logits, top_k)
+                logits[logits < v[:, [-1]]] = -float("Inf")
+            probs = torch.nn.functional.softmax(logits, dim=-1)
+            if sample:
+                x_next = torch.multinomial(probs, num_samples=1)
+            else:
+                _, x_next = torch.topk(probs, k=1, dim=-1)
+            x = torch.cat((x, x_next), dim=1)
+        return x
 
 
 class PositionalEncoding(nn.Module):
