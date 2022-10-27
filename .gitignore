@@ -1,8 +1,14 @@
+
+
+# python
 __pycache__
 *.egg-info
 
 # pytorch lightning
 /lightning_logs
+
+# data
+/data
 
 # editors
 .idea
