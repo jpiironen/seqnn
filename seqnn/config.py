@@ -1,6 +1,7 @@
 import pprint
 import seqnn
-from seqnn.utils import ensure_list
+import seqnn.model.likelihood
+from seqnn.utils import ensure_list, get_cls
 
 
 class Config:
@@ -23,6 +24,7 @@ class SeqNNConfig(Config):
         horizon_past,
         horizon_future,
         likelihood="LikGaussian",
+        likelihood_args={},
         model="RNN",
         model_args={},
         optimizer="SGD",
@@ -31,14 +33,19 @@ class SeqNNConfig(Config):
         lr_scheduler_args={"gamma": 0.5, "step_size": 2000},
         batch_size=32,
         batch_size_valid=32,
-        validate_every_nsteps=100,
+        validate_every_n_steps=100,
+        teacher_forcing_prob=0.5,
+        max_grad_norm=100.0,
     ):
         task_cfg = Config(
             targets=ensure_list(targets),
             controls=ensure_list(controls),
             horizon_past=horizon_past,
             horizon_future=horizon_future,
-            likelihood=likelihood,
+        )
+        lik_cfg = Config(
+            cls="seqnn.model.likelihood." + likelihood,
+            args=likelihood_args,
         )
         model_cfg = Config(
             cls="seqnn.model.core." + model,
@@ -55,10 +62,13 @@ class SeqNNConfig(Config):
         training_cfg = Config(
             batch_size=batch_size,
             batch_size_valid=batch_size_valid,
-            validate_every_nsteps=validate_every_nsteps,
+            validate_every_n_steps=validate_every_n_steps,
+            teacher_forcing_prob=teacher_forcing_prob,
+            max_grad_norm=max_grad_norm,
         )
         super().__init__(
             task=task_cfg,
+            lik=lik_cfg,
             model=model_cfg,
             optimizer=optimizer_cfg,
             scheduler=scheduler_cfg,
@@ -66,7 +76,7 @@ class SeqNNConfig(Config):
         )
 
     def get_likelihood(self):
-        return getattr(seqnn.model.likelihood, self.task.likelihood)()
+        return get_cls(self.lik.cls)(**self.lik.args)
 
     def get_num_targets(self):
         # TODO: DUMMY

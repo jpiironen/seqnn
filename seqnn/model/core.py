@@ -2,7 +2,7 @@ import pathlib
 import torch
 import torch.nn as nn
 import seqnn
-from seqnn.model.data_handler import DataHandler
+from seqnn.model.transformer import GenerativeTransformer
 from seqnn.utils import get_cls
 
 
@@ -37,7 +37,7 @@ class ModelCore(nn.Module):
             **config.model.args,
         )
         return model
-    
+
     def save(self, path):
         path = pathlib.Path(path)
         if not path.exists():
@@ -50,6 +50,9 @@ class ModelCore(nn.Module):
     def forward(
         self, target_past, control_past, control_future, target_future=None, **kwargs
     ):
+        raise NotImplementedError
+
+    def get_loss(self, target, control):
         raise NotImplementedError
 
 
@@ -110,3 +113,43 @@ class RNN(ModelCore):
             outputs_future.append(output)
 
         return torch.cat(outputs_future, dim=1)
+
+
+class Transformer(ModelCore):
+    def __init__(
+        self,
+        likelihood,
+        num_target,
+        num_control,
+        horizon_past,
+        horizon_future,
+        num_features=512,
+        num_heads=8,
+        num_blocks=4,
+        num_hidden_ff=1024,
+        dropout=0.1,
+    ):
+        assert isinstance(
+            likelihood, seqnn.model.likelihood.LikCategorical
+        ), "Transformer currently supports only categorical likelihood"
+        super().__init__(
+            likelihood, num_target, num_control, horizon_past, horizon_future
+        )
+        vocab_size = likelihood.get_num_parameters()
+        max_seq_len = horizon_past + horizon_future
+        self.model = GenerativeTransformer(
+            vocab_size,
+            max_seq_len,
+            num_blocks=num_blocks,
+            num_features=num_features,
+            num_heads=num_heads,
+            num_hidden_ff=num_hidden_ff,
+            dropout=dropout,
+        )
+
+    def get_loss(self, target, control):
+        tokens = target.squeeze(dim=2)
+        pred = self.model(tokens)
+        # prediction loss for every token (except the first one) conditioned on all preceding tokens
+        losses = self.likelihood.get_loss(pred[:, :-1, :], tokens[:, 1:])
+        return losses
