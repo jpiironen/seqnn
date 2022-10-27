@@ -26,13 +26,9 @@ class LikGaussian(Likelihood):
     def get_num_parameters(self):
         return 2
 
-    def get_loss(self, model_output, target, reduce="mean"):
+    def get_loss(self, model_output, target):
         mean, scale = self.split_model_output(model_output)
         loss = -torch.distributions.Normal(mean, scale).log_prob(target)
-        if reduce == "mean":
-            return loss.mean()
-        elif reduce == "sum":
-            return loss.sum()
         return loss
 
     def split_model_output(self, x):
