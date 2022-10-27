@@ -55,9 +55,9 @@ class GenerativeTransformer(nn.Module):
         self,
         vocab_size,
         max_seq_len,
-        num_blocks=4,
-        num_features=1024,
+        num_features=512,
         num_heads=8,
+        num_blocks=4,
         num_hidden_ff=1024,
         dropout=0.1,
         layernorm_last=False,
@@ -68,10 +68,10 @@ class GenerativeTransformer(nn.Module):
         Args:
             vocab_size: Number of tokens in the vocabulary.
             max_seq_len: Maximum sequence length (i.e. size of the look-back memory) of the model.
-            num_blocks: Number of transformer blocks.
             num_features: Number of features to be used for word embedding and further in all layers of the decoder.
                 Must be divisible by num_heads.
             num_heads: Number of attention heads inside the transformer block.
+            num_blocks: Number of transformer blocks.
             num_hidden_: Number of hidden units in the feedforward layer of the transformer block.
             dropout: Dropout level used in the transformer block.
         """
