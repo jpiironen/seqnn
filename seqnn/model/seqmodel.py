@@ -33,7 +33,9 @@ class SeqNNLightning(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         target, control = self.data_handler.prepare_data(batch, augment=True)
         teacher_forcing = np.random.rand() < self.config.training.teacher_forcing_prob
-        losses = self.model_core.get_loss(target, control, teacher_forcing=teacher_forcing)
+        losses = self.model_core.get_loss(
+            target, control, teacher_forcing=teacher_forcing
+        )
         loss = losses.mean()
 
         self.log("train_loss", loss.item())
