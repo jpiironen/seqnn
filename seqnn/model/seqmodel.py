@@ -39,8 +39,6 @@ class SeqNNLightning(pl.LightningModule):
         loss = losses.mean()
 
         self.log("train_loss", loss.item())
-        # self.log("train_loss", loss)
-        # self.log("train_loss", loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
