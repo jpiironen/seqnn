@@ -29,23 +29,6 @@ class SeqNNLightning(pl.LightningModule):
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
     def training_step(self, batch, batch_idx):
-        # past, future = batch
-        # (
-        #    target_past,
-        #    target_future,
-        #    control_past,
-        #    control_future,
-        # ) = self.data_handler.prepare_data(past, future, augment=True)
-        # teacher_forcing = np.random.rand() < self.config.training.teacher_forcing_prob
-        # output = self.forward(
-        #    target_past,
-        #    control_past,
-        #    control_future,
-        #    target_future=target_future,
-        #    teacher_forcing=teacher_forcing,
-        # )
-        # loss = self.model_core.likelihood.get_loss(output, target_future)
-
         target, control = self.data_handler.prepare_data(batch, augment=True)
         teacher_forcing = np.random.rand() < self.config.training.teacher_forcing_prob
         losses = self.model_core.get_loss(target, control, teacher_forcing=teacher_forcing)
