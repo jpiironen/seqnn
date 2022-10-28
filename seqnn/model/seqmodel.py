@@ -64,6 +64,7 @@ class SeqNN:
         max_steps=-1,
         overfit_batches=0.0,
         dev_run=False,
+        logdir=None,
     ):
         loader_train = self.data_to_loader(data_train, train=True)
         loader_valid = self.data_to_loader(data_valid)
@@ -80,6 +81,8 @@ class SeqNN:
             check_val_every_n_epoch=None,
             overfit_batches=overfit_batches,
             limit_val_batches=0.0 if overfit_batches > 0 else 1.0,
+            enable_checkpointing=False,
+            default_root_dir=logdir,
         )
         trainer.fit(self.model, loader_train, loader_valid)
 
