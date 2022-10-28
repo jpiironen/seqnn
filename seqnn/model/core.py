@@ -39,11 +39,15 @@ class ModelCore(nn.Module):
         )
         return model
 
-    def save(self, path):
-        path = pathlib.Path(path)
-        if not path.exists():
-            path.mkdir(parents=True)
-        torch.save(self.state_dict(), path / "model_core.pt")
+    def save_state(self, dir):
+        dir = pathlib.Path(dir)
+        if not dir.exists():
+            dir.mkdir(parents=True)
+        torch.save(self.state_dict(), dir / "model_core.pt")
+
+    def load_state(self, dir):
+        dir = pathlib.Path(dir)
+        self.load_state_dict(torch.load(dir / "model_core.pt"))
 
     def get_num_outputs(self):
         return self.likelihood.get_num_parameters() * self.num_target

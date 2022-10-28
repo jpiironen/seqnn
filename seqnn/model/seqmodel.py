@@ -1,8 +1,10 @@
+import pathlib
 import numpy as np
 import pandas as pd
 import torch
 import torch.utils.data
 import pytorch_lightning as pl
+from seqnn import SeqNNConfig
 from seqnn.data.dataset import CombinationDataset
 from seqnn.model.core import ModelCore
 from seqnn.model.data_handler import DataHandler
@@ -115,3 +117,16 @@ class SeqNN:
             return self.data_to_loader(dataset, train=train)
 
         raise NotImplementedError
+
+    def save(self, dir):
+        dir = pathlib.Path(dir)
+        self.config.save(dir / "config.yaml")
+        self.model.model_core.save_state(dir)
+
+    @staticmethod
+    def load(dir):
+        dir = pathlib.Path(dir)
+        config = SeqNNConfig.load(dir / "config.yaml")
+        model = SeqNN(config)
+        model.model.model_core.load_state(dir)
+        return model
