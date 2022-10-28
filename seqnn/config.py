@@ -1,7 +1,8 @@
+import pathlib
 import pprint
 import seqnn
 import seqnn.model.likelihood
-from seqnn.utils import ensure_list, get_cls
+from seqnn.utils import ensure_list, get_cls, save_yaml, load_yaml
 
 
 class Config:
@@ -14,6 +15,16 @@ class Config:
 
     def __repr__(self):
         return pprint.pformat(self.__dict__)
+
+    def to_dict(self):
+        return {
+            key: value.to_dict() if isinstance(value, Config) else value
+            for key, value in self.__dict__.items()
+        }
+
+    @staticmethod
+    def from_dict(d):
+        return Config(**d)
 
 
 class SeqNNConfig(Config):
@@ -85,3 +96,26 @@ class SeqNNConfig(Config):
     def get_num_controls(self):
         # TODO: DUMMY
         return len(self.task.controls)
+
+    def save(self, path):
+        path = pathlib.Path(path)
+        if not path.parent.exists():
+            path.parent.mkdir(parents=True)
+        save_yaml(self.to_dict(), path)
+
+    @staticmethod
+    def load(path):
+        config_dict = load_yaml(path)
+        return SeqNNConfig.from_dict(config_dict)
+
+    @staticmethod
+    def from_dict(d):
+        config = SeqNNConfig(
+            targets=None, controls=None, horizon_past=None, horizon_future=None
+        )
+        d = {
+            key: Config.from_dict(value) if isinstance(value, dict) else value
+            for key, value in d.items()
+        }
+        config.update(**d)
+        return config
