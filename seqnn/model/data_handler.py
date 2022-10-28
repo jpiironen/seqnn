@@ -1,4 +1,7 @@
+import numpy as np
+import pandas as pd
 import torch
+import seqnn.data.dataset
 
 
 class DataHandler:
@@ -49,4 +52,26 @@ class DataHandler:
     @staticmethod
     def get_variable_grouping(config):
         # TODO: DUMMY
-        return {tag: tag for tag in config.task.targets + config.task.controls}
+        return {tag: [tag] for tag in config.task.targets + config.task.controls}
+
+    @staticmethod
+    def df_to_dataset(df, config):
+        if isinstance(df, (list, tuple)):
+            # multiple data frames, so create a combination dataset
+            datasets = [
+                DataHandler.df_to_dataset(d, config)
+                for d in df
+            ]
+            return seqnn.data.dataset.CombinationDataset(datasets)
+        assert isinstance(
+            df, pd.DataFrame
+        ), "Expected pandas data frame, got %s" % type(df)
+        seq_len = config.task.horizon_past + config.task.horizon_future
+        groups = DataHandler.get_variable_grouping(config)
+        data_dict = {
+            group_name: torch.tensor(np.array(df[tags]), dtype=torch.float)
+            for group_name, tags in groups.items()
+        }
+        return seqnn.data.dataset.DictSeqDataset(
+            data_dict, seq_len, index=df.index
+        )
