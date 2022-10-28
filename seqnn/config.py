@@ -30,7 +30,7 @@ class SeqNNConfig(Config):
         optimizer="SGD",
         optimizer_args={"lr": 0.001, "momentum": 0.9},
         lr_scheduler="StepLR",
-        lr_scheduler_args={"gamma": 0.5, "step_size": 2000},
+        lr_scheduler_args={"gamma": 1.0, "step_size": 2000},
         batch_size=32,
         batch_size_valid=32,
         validate_every_n_steps=100,
