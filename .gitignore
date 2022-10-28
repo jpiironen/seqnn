@@ -8,8 +8,9 @@ __pycache__
 # pytorch lightning
 /lightning_logs
 
-# data
+# data and models
 /data
+/models
 
 # editors
 .idea
