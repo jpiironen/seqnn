@@ -182,6 +182,7 @@ class RNN(ModelCore):
         model_type=nn.GRU,
         num_layers=2,
         hidden_size=128,
+        dropout=0.1,
     ):
         super().__init__(
             likelihood,
@@ -196,6 +197,7 @@ class RNN(ModelCore):
             num_layers=num_layers,
             batch_first=True,
         )
+        self.dropout = nn.Dropout(dropout)
         self.readout = nn.Linear(hidden_size, self.num_output)
 
     def forward(
@@ -220,7 +222,7 @@ class RNN(ModelCore):
         for i in range(n_future):
             x_i = torch.cat((control_future[:, i : i + 1, :], y), dim=2)
             output, state = self.model(x_i, state)
-            output = self.readout(output)
+            output = self.readout(self.dropout(output))
             if teacher_forcing:
                 y = target_future[:, i : i + 1, :]
             else:
