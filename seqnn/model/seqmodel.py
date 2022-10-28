@@ -26,7 +26,7 @@ class SeqNNLightning(pl.LightningModule):
         scheduler = get_cls(self.config.scheduler.cls)(
             optimizer, **self.config.scheduler.args
         )
-        return [optimizer], [scheduler]
+        return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
     def training_step(self, batch, batch_idx):
         # past, future = batch
