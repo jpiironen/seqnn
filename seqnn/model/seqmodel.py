@@ -3,6 +3,7 @@ import pandas as pd
 import torch
 import torch.utils.data
 import pytorch_lightning as pl
+from seqnn.data.dataset import CombinationDataset
 from seqnn.model.core import ModelCore
 from seqnn.model.data_handler import DataHandler
 from seqnn.utils import get_cls
@@ -120,11 +121,13 @@ class SeqNN:
                     drop_last=False,
                 )
         if isinstance(data, (list, tuple)):
-            return [self.data_to_loader(d, train=train) for d in data]
-        if isinstance(data, pd.DataFrame):
             raise NotImplementedError
+            # TODO: this would not work because data_to_loader returns a loader...
+            # return CombinationDataset(
+            #    [self.data_to_loader(d, train=train) for d in data]
+            # )
+        if isinstance(data, pd.DataFrame):
+            dataset = DataHandler.df_to_dataset(data, self.config)
+            return self.data_to_loader(dataset, train=train)
 
         raise NotImplementedError
-
-    # def forward(self, *args, **kwargs):
-    #    return self.model_core(*args, **kwargs)
