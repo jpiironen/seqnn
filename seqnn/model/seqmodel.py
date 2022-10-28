@@ -47,7 +47,8 @@ class SeqNNLightning(pl.LightningModule):
         # loss = self.model_core.likelihood.get_loss(output, target_future)
 
         target, control = self.data_handler.prepare_data(batch, augment=True)
-        losses = self.model_core.get_loss(target, control)
+        teacher_forcing = np.random.rand() < self.config.training.teacher_forcing_prob
+        losses = self.model_core.get_loss(target, control, teacher_forcing=teacher_forcing)
         loss = losses.mean()
 
         self.log("train_loss", loss.item())
@@ -56,8 +57,8 @@ class SeqNNLightning(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        target, control = self.data_handler.prepare_data(batch, augment=True)
-        losses = self.model_core.get_loss(target, control)
+        target, control = self.data_handler.prepare_data(batch, augment=False)
+        losses = self.model_core.get_loss(target, control, teacher_forcing=False)
         return losses
 
     def validation_epoch_end(self, outputs):
