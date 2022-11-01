@@ -171,6 +171,29 @@ class SeqNN:
             return DataHandler.df_to_dataset(data, self.config)
         raise NotImplementedError
 
+    @torch.no_grad()
+    def predict(self, past, future, native=True):
+        self.model.eval()
+        past = self.model.to_scaled(past)
+        future = self.model.to_scaled(future)
+        (
+            target_past,
+            control_past,
+            _,
+            control_future,
+        ) = self.model.data_handler.prepare_data(past, future, augment=False)
+        pred = self.model(target_past, control_past, control_future)
+        pred_params = self.model.model_core.likelihood.parametrize_model_output(pred)
+        params_per_target = {
+            key: self.model.data_handler.split_target(tensor)
+            for key, tensor in pred_params.items()
+        }
+        if native:
+            params_per_target = self.model.model_core.likelihood.to_native(
+                params_per_target, self.model.scaler
+            )
+        return params_per_target
+
     def save(self, dir):
         dir = pathlib.Path(dir)
         self.config.save(dir / "config.yaml")
