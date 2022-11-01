@@ -1,4 +1,17 @@
 
+
+# python
+__pycache__
+*.egg-info
+.ipynb_checkpoints
+
+# pytorch lightning
+/lightning_logs
+
+# data and models
+/data
+/models
+
 # editors
 .idea
 
