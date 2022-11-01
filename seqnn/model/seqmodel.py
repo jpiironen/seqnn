@@ -17,6 +17,7 @@ class SeqNNLightning(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        pl.seed_everything(self.config.training.seed)
         self.model_core = ModelCore.create(config)
         self.scaler = self.create_scaler(config)
         self.data_handler = DataHandler(config)
