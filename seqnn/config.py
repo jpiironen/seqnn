@@ -34,7 +34,7 @@ class SeqNNConfig(Config):
         horizon_future,
         likelihood="LikGaussian",
         likelihood_args={},
-        model="RNN",
+        model="NLDS",
         model_args={},
         optimizer="SGD",
         optimizer_args={"lr": 0.001, "momentum": 0.9},
