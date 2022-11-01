@@ -102,7 +102,7 @@ class SeqNNLightning(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         losses = torch.cat(outputs, dim=0)
-        self.log("valid_loss", losses.mean().item())
+        self.log("valid_loss", losses.mean().item(), prog_bar=True)
 
 
 class SeqNN:
