@@ -4,11 +4,13 @@ import pandas as pd
 import torch
 import torch.utils.data
 import pytorch_lightning as pl
-from seqnn import SeqNNConfig
+
+import seqnn.data.scalers
+from seqnn.config import SeqNNConfig
 from seqnn.data.dataset import CombinationDataset
 from seqnn.model.core import ModelCore
 from seqnn.model.data_handler import DataHandler
-from seqnn.utils import get_cls
+from seqnn.utils import get_cls, save_torch_state, load_torch_state
 
 
 class SeqNNLightning(pl.LightningModule):
@@ -16,7 +18,18 @@ class SeqNNLightning(pl.LightningModule):
         super().__init__()
         self.config = config
         self.model_core = ModelCore.create(config)
+        self.scaler = self.create_scaler(config)
         self.data_handler = DataHandler(config)
+        self.save_hyperparameters(config.to_dict())
+
+    def create_scaler(self, config):
+        scalers = {}
+        for group, scaler_spec in config.scalers.groups.items():
+            cls_name = scaler_spec["cls"]
+            args = scaler_spec["args"]
+            ndim = len(config.task.grouping[group])
+            scalers[group] = get_cls(cls_name)(ndim, **args)
+        return seqnn.data.scalers.ScalerCollection(scalers)
 
     def forward(self, *args, **kwargs):
         return self.model_core(*args, **kwargs)
@@ -30,20 +43,49 @@ class SeqNNLightning(pl.LightningModule):
         )
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
+    def to_scaled(self, seq):
+        return self.scaler.to_scaled(seq)
+
+    def to_native(self, seq):
+        return self.scaler.to_native(seq)
+
     def training_step(self, batch, batch_idx):
-        target, control = self.data_handler.prepare_data(batch, augment=True)
+        past, future = batch
+        past = self.to_scaled(past)
+        future = self.to_scaled(future)
+        (
+            target_past,
+            control_past,
+            target_future,
+            control_future,
+        ) = self.data_handler.prepare_data(past, future, augment=True)
         teacher_forcing = np.random.rand() < self.config.training.teacher_forcing_prob
         losses = self.model_core.get_loss(
-            target, control, teacher_forcing=teacher_forcing
+            target_past,
+            control_past,
+            target_future,
+            control_future,
+            teacher_forcing=teacher_forcing,
         )
         loss = losses.mean()
-
         self.log("train_loss", loss.item())
         return loss
 
     def validation_step(self, batch, batch_idx):
-        target, control = self.data_handler.prepare_data(batch, augment=False)
-        losses = self.model_core.get_loss(target, control, teacher_forcing=False)
+        past, future = batch
+        (
+            target_past,
+            control_past,
+            target_future,
+            control_future,
+        ) = self.data_handler.prepare_data(past, future, augment=False)
+        losses = self.model_core.get_loss(
+            target_past,
+            control_past,
+            target_future,
+            control_future,
+            teacher_forcing=False,
+        )
         return losses
 
     def validation_epoch_end(self, outputs):
@@ -68,6 +110,7 @@ class SeqNN:
     ):
         loader_train = self.data_to_loader(data_train, train=True)
         loader_valid = self.data_to_loader(data_valid)
+        self.fit_scalers(loader_train)
         trainer = pl.Trainer(
             fast_dev_run=dev_run,
             gradient_clip_val=self.config.training.max_grad_norm,
@@ -86,50 +129,59 @@ class SeqNN:
         )
         trainer.fit(self.model, loader_train, loader_valid)
 
+    def fit_scalers(self, dataloader):
+        for batch in dataloader:
+            for seq in batch:
+                self.model.scaler.update_stats(seq)
+
     def data_to_loader(self, data, train=False):
+        if isinstance(data, torch.utils.data.DataLoader):
+            # do not modify if already got data loader as an input
+            return data
+        dataset = self.get_dataset(data)
+        if dataset is None:
+            assert not train, "Training data/loader cannot be None."
+            return None
+        if train:
+            if len(dataset) == 0:
+                raise RuntimeError("Training set has zero samples.")
+            return torch.utils.data.DataLoader(
+                dataset,
+                batch_size=self.config.training.batch_size,
+                shuffle=True,
+                drop_last=True,
+            )
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_size=self.config.training.batch_size_valid,
+            shuffle=False,
+            drop_last=False,
+        )
+
+    def get_dataset(self, data):
         if data is None:
-            assert not train, "Training data cannot be None."
             return None
         if isinstance(data, torch.utils.data.DataLoader):
-            return data
+            return data.dataset
         if isinstance(data, torch.utils.data.Dataset):
-            if train:
-                if len(data) == 0:
-                    raise RuntimeError("Training set has zero samples.")
-                return torch.utils.data.DataLoader(
-                    data,
-                    batch_size=self.config.training.batch_size,
-                    shuffle=True,
-                    drop_last=True,
-                )
-            else:
-                return torch.utils.data.DataLoader(
-                    data,
-                    batch_size=self.config.training.batch_size_valid,
-                    shuffle=False,
-                    drop_last=False,
-                )
+            return data
         if isinstance(data, (list, tuple)):
-            raise NotImplementedError
-            # TODO: this would not work because data_to_loader returns a loader...
-            # return CombinationDataset(
-            #    [self.data_to_loader(d, train=train) for d in data]
-            # )
+            return CombinationDataset([self.get_dataset(d) for d in data])
         if isinstance(data, pd.DataFrame):
-            dataset = DataHandler.df_to_dataset(data, self.config)
-            return self.data_to_loader(dataset, train=train)
-
+            return DataHandler.df_to_dataset(data, self.config)
         raise NotImplementedError
 
     def save(self, dir):
         dir = pathlib.Path(dir)
         self.config.save(dir / "config.yaml")
-        self.model.model_core.save_state(dir)
+        save_torch_state(self.model.model_core, dir / "model_core.pt")
+        save_torch_state(self.model.scaler, dir / "scaler.pt")
 
     @staticmethod
     def load(dir):
         dir = pathlib.Path(dir)
         config = SeqNNConfig.load(dir / "config.yaml")
         model = SeqNN(config)
-        model.model.model_core.load_state(dir)
+        load_torch_state(model.model.model_core, dir / "model_core.pt")
+        load_torch_state(model.model.scaler, dir / "scaler.pt")
         return model

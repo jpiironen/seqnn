@@ -39,16 +39,6 @@ class ModelCore(nn.Module):
         )
         return model
 
-    def save_state(self, dir):
-        dir = pathlib.Path(dir)
-        if not dir.exists():
-            dir.mkdir(parents=True)
-        torch.save(self.state_dict(), dir / "model_core.pt")
-
-    def load_state(self, dir):
-        dir = pathlib.Path(dir)
-        self.load_state_dict(torch.load(dir / "model_core.pt"))
-
     def get_num_outputs(self):
         return self.likelihood.get_num_parameters() * self.num_target
 
@@ -62,10 +52,15 @@ class ModelCore(nn.Module):
     ):
         raise NotImplementedError
 
-    def get_loss(self, target, control, aux=None, teacher_forcing=False):
-        target_past, target_future = self.split_past_and_future(target)
-        control_past, control_future = self.split_past_and_future(control)
-        aux_past, _ = self.split_past_and_future(aux)
+    def get_loss(
+        self,
+        target_past,
+        control_past,
+        target_future,
+        control_future,
+        aux_past=None,
+        teacher_forcing=False,
+    ):
         output = self(
             target_past,
             control_past,
@@ -269,6 +264,7 @@ class Transformer(ModelCore):
         )
 
     def get_loss(self, target, control, **kwargs):
+        # TODO: this function no longer satisfies the super class method signature
         tokens = target.squeeze(dim=2)
         pred = self.model(tokens)
         # prediction loss for every token (except the first one) conditioned on all preceding tokens

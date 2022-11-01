@@ -1,4 +1,5 @@
 import yaml
+import torch
 from importlib import import_module
 
 
@@ -29,4 +30,18 @@ def save_yaml(dictionary, path):
 def load_yaml(path):
     with open(path, "rb") as file:
         data = yaml.load(file, Loader=yaml.FullLoader)
+    return data
+
+def save_torch_state(module, path):
+    torch.save(module.state_dict(), path)
+
+def load_torch_state(module, path):
+    module.load_state_dict(torch.load(path))
+
+def get_data_sample(dataset, indices):
+    indices = ensure_list(indices)
+    subset = torch.utils.data.Subset(dataset, indices)
+    loader = torch.utils.data.DataLoader(subset, batch_size=len(indices))
+    for data in loader:
+        break
     return data
