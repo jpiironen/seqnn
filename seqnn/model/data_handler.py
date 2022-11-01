@@ -9,13 +9,6 @@ class DataHandler:
         self.config = config
         self.targets = config.task.targets
         self.controls = config.task.controls
-        self.tagindex = {tag: i for i, tag in enumerate(self.targets + self.controls)}
-
-    def get_tags(self, tensor, tags):
-        assert tensor.ndim == 3
-        assert isinstance(tags, list)
-        indices = [self.tagindex[tag] for tag in tags]
-        return tensor[:, :, indices]
 
     def get_control(self, data_dict):
         if len(self.controls) == 0:
@@ -43,10 +36,6 @@ class DataHandler:
 
         # if augment:
         #    past, future = self.augment_native(past, future)
-
-        # if self.scaler:
-        #    past = self.to_scaled(past)
-        #    future = self.to_scaled(future)
 
         # past, future = self.impute(past, future)
         return (
