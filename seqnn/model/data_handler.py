@@ -40,38 +40,28 @@ class DataHandler:
         #    future = self.to_scaled(future)
 
         # past, future = self.impute(past, future)
-
-        # target_past = self.get_target(past)
-        # target_future = self.get_target(future)
-        # control_past = self.get_control(past)
-        # control_future = self.get_control(future)
-        # return target_past, target_future, control_past, control_future
-
-        return self.get_target(batch), self.get_control(batch)
-
-    @staticmethod
-    def get_variable_grouping(config):
-        # TODO: DUMMY
-        return {tag: [tag] for tag in config.task.targets + config.task.controls}
+        return (
+            self.get_target(past),
+            self.get_control(past),
+            self.get_target(future),
+            self.get_control(future),
+        )
 
     @staticmethod
     def df_to_dataset(df, config):
         if isinstance(df, (list, tuple)):
             # multiple data frames, so create a combination dataset
-            datasets = [
-                DataHandler.df_to_dataset(d, config)
-                for d in df
-            ]
+            datasets = [DataHandler.df_to_dataset(d, config) for d in df]
             return seqnn.data.dataset.CombinationDataset(datasets)
         assert isinstance(
             df, pd.DataFrame
         ), "Expected pandas data frame, got %s" % type(df)
-        seq_len = config.task.horizon_past + config.task.horizon_future
-        groups = DataHandler.get_variable_grouping(config)
         data_dict = {
             group_name: torch.tensor(np.array(df[tags]), dtype=torch.float)
-            for group_name, tags in groups.items()
+            for group_name, tags in config.task.grouping.items()
         }
         return seqnn.data.dataset.DictSeqDataset(
-            data_dict, seq_len, index=df.index
+            data_dict,
+            (config.task.horizon_past, config.task.horizon_future),
+            index=df.index,
         )

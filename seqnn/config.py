@@ -1,7 +1,5 @@
 import pathlib
 import pprint
-import seqnn
-import seqnn.model.likelihood
 from seqnn.utils import ensure_list, get_cls, save_yaml, load_yaml
 
 
@@ -48,11 +46,15 @@ class SeqNNConfig(Config):
         teacher_forcing_prob=0.5,
         max_grad_norm=100.0,
     ):
+        targets_grouped = self.standardize_variable_set(targets)
+        controls_grouped = self.standardize_variable_set(controls)
+        grouping = targets_grouped | controls_grouped
         task_cfg = Config(
-            targets=ensure_list(targets),
-            controls=ensure_list(controls),
+            targets=list(targets_grouped.keys()),
+            controls=list(controls_grouped.keys()),
             horizon_past=horizon_past,
             horizon_future=horizon_future,
+            grouping=grouping,
         )
         lik_cfg = Config(
             cls="seqnn.model.likelihood." + likelihood,
@@ -61,6 +63,15 @@ class SeqNNConfig(Config):
         model_cfg = Config(
             cls="seqnn.model.core." + model,
             args=model_args,
+        )
+        scaler_cfg = Config(
+            groups={
+                group: dict(
+                    cls="seqnn.data.scalers.MinMaxScaler",
+                    args={},
+                )
+                for group in task_cfg.grouping.keys()
+            }
         )
         optimizer_cfg = Config(
             cls="torch.optim." + optimizer,
@@ -81,10 +92,26 @@ class SeqNNConfig(Config):
             task=task_cfg,
             lik=lik_cfg,
             model=model_cfg,
+            scalers=scaler_cfg,
             optimizer=optimizer_cfg,
             scheduler=scheduler_cfg,
             training=training_cfg,
         )
+
+    def standardize_variable_set(self, vars):
+        if vars is None:
+            return {}
+        if isinstance(vars, (list, tuple)):
+            for v in vars:
+                assert isinstance(v, str)
+            return {v: [v] for v in vars}
+        if isinstance(vars, dict):
+            for key, value in vars.items():
+                assert isinstance(key, str)
+                assert isinstance(value, str)
+            vars = {key: ensure_list(value) for key, value in vars.items()}
+            return vars
+        raise NotImplementedError(f"Got unknown type variable set: {type(vars)}")
 
     def get_likelihood(self):
         return get_cls(self.lik.cls)(**self.lik.args)
