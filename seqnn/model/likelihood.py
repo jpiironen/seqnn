@@ -9,6 +9,12 @@ class Likelihood:
     def get_num_parameters(self):
         raise NotImplementedError
 
+    def parametrize_model_output(self, model_output):
+        raise NotImplementedError
+
+    def to_native(self, param, scaler):
+        raise NotImplementedError
+
     def get_loss(self, model_output, target):
         raise NotImplementedError
 
@@ -26,25 +32,43 @@ class LikGaussian(Likelihood):
     def get_num_parameters(self):
         return 2
 
-    def get_loss(self, model_output, target):
-        mean, scale = self.split_model_output(model_output)
-        loss = -torch.distributions.Normal(mean, scale).log_prob(target)
-        return loss
-
-    def split_model_output(self, x):
+    def parametrize_model_output(self, x):
         assert x.ndim == 3
         num_obs = int(x.shape[2] / 2)
         mean, scale_unconstrained = torch.split(x, (num_obs, num_obs), dim=2)
         scale = self.real_to_positive(scale_unconstrained)
-        return mean, scale
+        return {"mean": mean, "scale": scale}
+
+    def to_native(self, param, scaler):
+        param_native = {}
+        param_native["mean"] = scaler.to_native(param["mean"])
+        if isinstance(param["mean"], dict) and isinstance(param["scale"], dict):
+            mean_plus_scale = {
+                key: param["mean"][key] + param["scale"][key] for key in param["mean"]
+            }
+            mean_plus_scale_native = scaler.to_native(mean_plus_scale)
+            param_native["scale"] = {
+                key: mean_plus_scale_native[key] - param_native["mean"][key]
+                for key in mean_plus_scale_native
+            }
+        else:
+            mean_plus_scale = param["mean"] + param["scale"]
+            mean_plus_scale_native = scaler.to_native(mean_plus_scale)
+            param_native["scale"] = mean_plus_scale_native - param_native["mean"]
+        return param_native
+
+    def get_loss(self, model_output, target):
+        p = self.parametrize_model_output(model_output)
+        loss = -torch.distributions.Normal(p["mean"], p["scale"]).log_prob(target)
+        return loss
 
     def sample(self, model_output):
-        mean, scale = self.split_model_output(model_output)
-        return torch.distributions.Normal(mean, scale).sample()
+        p = self.parametrize_model_output(model_output)
+        return torch.distributions.Normal(p["mean"], p["scale"]).sample()
 
     def quantile(self, model_output, prob):
-        mean, scale = self.split_model_output(model_output)
-        return torch.distributions.Normal(mean, scale).icdf(prob)
+        p = self.parametrize_model_output(model_output)
+        return torch.distributions.Normal(p["mean"], p["scale"]).icdf(prob)
 
 
 class LikCategorical(Likelihood):
@@ -54,6 +78,9 @@ class LikCategorical(Likelihood):
 
     def get_num_parameters(self):
         return self.num_classes
+
+    def parametrize_model_output(self, model_output):
+        return {"probs": torch.softmax(model_output, dim=-1)}
 
     def get_loss(self, model_output, target):
         loss = -torch.distributions.Categorical(logits=model_output).log_prob(target)
