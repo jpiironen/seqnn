@@ -83,6 +83,8 @@ class SeqNNLightning(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         past, future = batch
+        past = self.to_scaled(past)
+        future = self.to_scaled(future)
         (
             target_past,
             control_past,
