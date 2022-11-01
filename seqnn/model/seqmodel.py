@@ -44,6 +44,14 @@ class SeqNNLightning(pl.LightningModule):
         )
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
+    def zero_scaler_grad(self):
+        # zero out the gradient of the scaler parameters during training, so as to
+        # not affect the gradient statistics (will not have effect on the training since
+        # the scaler parameters are not optimized)
+        for p in self.scaler.parameters():
+            if p.grad is not None:
+                p.grad.zero_()
+
     def to_scaled(self, seq):
         return self.scaler.to_scaled(seq)
 
@@ -70,6 +78,7 @@ class SeqNNLightning(pl.LightningModule):
         )
         loss = losses.mean()
         self.log("train_loss", loss.item())
+        self.zero_scaler_grad()
         return loss
 
     def validation_step(self, batch, batch_idx):
