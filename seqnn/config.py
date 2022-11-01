@@ -45,6 +45,7 @@ class SeqNNConfig(Config):
         validate_every_n_steps=100,
         teacher_forcing_prob=0.5,
         max_grad_norm=100.0,
+        seed=42,
     ):
         targets_grouped = self.standardize_variable_set(targets)
         controls_grouped = self.standardize_variable_set(controls)
@@ -84,9 +85,10 @@ class SeqNNConfig(Config):
         training_cfg = Config(
             batch_size=batch_size,
             batch_size_valid=batch_size_valid,
-            validate_every_n_steps=validate_every_n_steps,
-            teacher_forcing_prob=teacher_forcing_prob,
             max_grad_norm=max_grad_norm,
+            seed=seed,
+            teacher_forcing_prob=teacher_forcing_prob,
+            validate_every_n_steps=validate_every_n_steps,
         )
         super().__init__(
             task=task_cfg,
@@ -117,11 +119,9 @@ class SeqNNConfig(Config):
         return get_cls(self.lik.cls)(**self.lik.args)
 
     def get_num_targets(self):
-        # TODO: DUMMY
         return len(self.task.targets)
 
     def get_num_controls(self):
-        # TODO: DUMMY
         return len(self.task.controls)
 
     def save(self, path):
