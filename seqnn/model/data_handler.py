@@ -30,7 +30,16 @@ class DataHandler:
             return torch.cat([data_dict[target] for target in self.targets], dim=2)
         return None
 
-    def prepare_data(self, batch, augment=False):
+    def split_target(self, data_tensor):
+        groups = self.config.task.grouping
+        target_group_sizes = [len(groups[target]) for target in self.targets]
+        if data_tensor is not None:
+            data_splitted = torch.split(data_tensor, target_group_sizes, dim=2)
+        else:
+            data_splitted = [None] * len(target_group_sizes)
+        return {group: data for group, data in zip(self.targets, data_splitted)}
+
+    def prepare_data(self, past, future, augment=False):
 
         # if augment:
         #    past, future = self.augment_native(past, future)
