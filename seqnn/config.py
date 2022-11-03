@@ -109,11 +109,18 @@ class SeqNNConfig(Config):
             return {v: [v] for v in vars}
         if isinstance(vars, dict):
             for key, value in vars.items():
-                assert isinstance(key, str)
-                assert isinstance(value, str)
+                assert isinstance(
+                    key, str
+                ), "If targets/controls is a dict, then each key must be a string"
+                for v in ensure_list(value):
+                    assert isinstance(
+                        v, str
+                    ), "If targets/controls is a dict, then each value must be a list of strings"
             vars = {key: ensure_list(value) for key, value in vars.items()}
             return vars
-        raise NotImplementedError(f"Got unknown type variable set: {type(vars)}")
+        raise NotImplementedError(
+            f"Got unknown type for targets/controls: {type(vars)}"
+        )
 
     def get_likelihood(self):
         return get_cls(self.lik.cls)(**self.lik.args)
