@@ -126,10 +126,10 @@ class SeqNNConfig(Config):
         return get_cls(self.lik.cls)(**self.lik.args)
 
     def get_num_targets(self):
-        return len(self.task.targets)
+        return sum(len(self.task.grouping[group]) for group in self.task.targets)
 
     def get_num_controls(self):
-        return len(self.task.controls)
+        return sum(len(self.task.grouping[group]) for group in self.task.controls)
 
     def save(self, path):
         path = pathlib.Path(path)
