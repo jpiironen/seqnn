@@ -15,7 +15,7 @@ class MLP(nn.Module):
         dropout=0.0,
         dropout_input=0.0,
         act=nn.ReLU(),
-        dropout_before_act=True,
+        dropout_before_act=False,
     ):
         super(MLP, self).__init__()
         self.sizes = sizes
@@ -55,7 +55,7 @@ class CNN1d(nn.Module):
         kernel_size=3,
         dropout=0.0,
         dropout_between=None,
-        dropout_before_act=True,
+        dropout_before_act=False,
         act=nn.ReLU(),
     ):
         super().__init__()
