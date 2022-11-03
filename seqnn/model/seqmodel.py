@@ -117,6 +117,7 @@ class SeqNN:
         max_epochs=1,
         max_steps=-1,
         overfit_batches=0.0,
+        progressbar=True,
         dev_run=False,
         logdir=None,
     ):
@@ -128,7 +129,7 @@ class SeqNN:
             gradient_clip_val=self.config.training.max_grad_norm,
             max_epochs=max_epochs,
             max_steps=max_steps,
-            enable_progress_bar=True,
+            enable_progress_bar=progressbar,
             log_every_n_steps=1,
             num_sanity_val_steps=-1,
             track_grad_norm=2,
