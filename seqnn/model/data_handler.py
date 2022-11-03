@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import seqnn.data.dataset
+from seqnn.utils import ensure_list
 
 
 class DataHandler:
@@ -9,6 +10,27 @@ class DataHandler:
         self.config = config
         self.targets = config.task.targets
         self.controls = config.task.controls
+        self.tag_to_group_and_index = self.create_tag_index()
+
+    def create_tag_index(self):
+        # create a dictionary where:
+        #   key = <tag name>
+        #   value = (<group_name>, <index within group>)
+        mapping = {}
+        for group_name, tags in self.config.task.grouping.items():
+            for i, tag in enumerate(tags):
+                mapping[tag] = (group_name, i)
+        return mapping
+
+    def get_tags(self, data_dict, tags):
+        tags = ensure_list(tags)
+        data_out = []
+        for tag in tags:
+            group_name, index_within_group = self.tag_to_group_and_index[tag]
+            tensor = data_dict[group_name]
+            assert tensor.ndim == 3, "Expected a dictionary of 3d-tensors."
+            data_out.append(tensor[:, :, index_within_group : index_within_group + 1])
+        return torch.cat(data_out, dim=-1)
 
     def get_control(self, data_dict):
         if len(self.controls) == 0:

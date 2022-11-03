@@ -184,6 +184,12 @@ class SeqNN:
             return DataHandler.df_to_dataset(data, self.config)
         raise NotImplementedError
 
+    def get_likelihood(self):
+        return self.model.model_core.likelihood
+
+    def get_tags(self, data_dict, tags):
+        return self.model.data_handler.get_tags(data_dict, tags)
+
     @torch.no_grad()
     def predict(self, past, future, native=True):
         self.model.eval()
@@ -195,14 +201,15 @@ class SeqNN:
             _,
             control_future,
         ) = self.model.data_handler.prepare_data(past, future, augment=False)
+        likelihood = self.get_likelihood()
         pred = self.model(target_past, control_past, control_future)
-        pred_params = self.model.model_core.likelihood.parametrize_model_output(pred)
+        pred_params = likelihood.parametrize_model_output(pred)
         params_per_target = {
             key: self.model.data_handler.split_target(tensor)
             for key, tensor in pred_params.items()
         }
         if native:
-            params_per_target = self.model.model_core.likelihood.to_native(
+            params_per_target = likelihood.to_native(
                 params_per_target, self.model.scaler
             )
         return params_per_target
