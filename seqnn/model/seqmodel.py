@@ -190,7 +190,6 @@ class SeqNN:
     def get_tags(self, data_dict, tags):
         return self.model.data_handler.get_tags(data_dict, tags)
 
-    @torch.no_grad()
     def predict(self, past, future, native=True):
         self.model.eval()
         past = self.model.to_scaled(past)

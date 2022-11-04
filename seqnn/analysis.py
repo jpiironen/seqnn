@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 import seqnn.model.likelihood
 from seqnn.utils import ensure_list
@@ -21,7 +22,8 @@ def plot_prediction(
     assert isinstance(
         model.get_likelihood(), seqnn.model.likelihood.LikGaussian
     ), "Prediction visualization implemented only for Gaussian likelihood"
-    pred_all = model.predict(past, future)
+    with torch.no_grad():
+        pred_all = model.predict(past, future)
 
     tags_pred = ensure_list(tags_pred)
     tags_control = ensure_list(tags_control)
