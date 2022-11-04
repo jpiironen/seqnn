@@ -22,15 +22,30 @@ class DataHandler:
                 mapping[tag] = (group_name, i)
         return mapping
 
+    def get_group_and_index(self, tag):
+        return self.tag_to_group_and_index[tag]
+
     def get_tags(self, data_dict, tags):
         tags = ensure_list(tags)
         data_out = []
         for tag in tags:
-            group_name, index_within_group = self.tag_to_group_and_index[tag]
+            group_name, index_within_group = self.get_group_and_index(tag)
             tensor = data_dict[group_name]
             assert tensor.ndim == 3, "Expected a dictionary of 3d-tensors."
             data_out.append(tensor[:, :, index_within_group : index_within_group + 1])
         return torch.cat(data_out, dim=-1)
+
+    def set_tags(self, data_dict, tags, values):
+        tags = ensure_list(tags)
+        assert values.ndim == 3
+        assert len(tags) == values.shape[2]
+        for i, tag in enumerate(tags):
+            group_name, index_within_group = self.tag_to_group_and_index[tag]
+            tensor = data_dict[group_name]
+            assert tensor.ndim == 3, "Expected a dictionary of 3d-tensors."
+            tensor[:, :, index_within_group : index_within_group + 1] = values[
+                :, :, i : i + 1
+            ]
 
     def get_control(self, data_dict):
         if len(self.controls) == 0:

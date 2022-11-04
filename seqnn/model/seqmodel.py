@@ -190,6 +190,12 @@ class SeqNN:
     def get_tags(self, data_dict, tags):
         return self.model.data_handler.get_tags(data_dict, tags)
 
+    def set_tags(self, data_dict, tags, values):
+        self.model.data_handler.set_tags(data_dict, tags, values)
+
+    def get_group_and_index(self, tag):
+        return self.model.data_handler.get_group_and_index(tag)
+
     def predict(self, past, future, native=True):
         self.model.eval()
         past = self.model.to_scaled(past)
