@@ -70,9 +70,10 @@ class DataHandler:
         return {group: data for group, data in zip(self.targets, data_splitted)}
 
     def prepare_data(self, past, future, augment=False):
-
+        # TODO: this method is kind of dumb, refactor this part
+        # TODO: implement augmentation
         # if augment:
-        #    past, future = self.augment_native(past, future)
+        #    past, future = self.augment(past, future)
 
         # past, future = self.impute(past, future)
         return (
