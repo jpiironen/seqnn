@@ -86,3 +86,74 @@ class AdamPlanner:
         # update original plan dictionary in place
         for group, tensor in self.to_constrained(self.plan_param_uncons).items():
             self.plan[group].mul_(0.0).add_(tensor.detach())
+
+
+class CategoricalCEMPlanner:
+    def __init__(
+        self,
+        model,
+        data_past,
+        control_plan,
+        num_categories,
+        population_size=128,
+        num_elite=16,
+        step_size=0.5,
+    ):
+        self.model = model
+        self.past = {
+            key: tensor.repeat(population_size, 1, 1)
+            for key, tensor in data_past.items()
+        }
+        self.plan = control_plan
+        self.plans = {
+            key: tensor.repeat(population_size, 1, 1)
+            for key, tensor in control_plan.items()
+        }
+        self.tags_to_optimize = list(num_categories.keys())
+        plan_length = model.get_tags(control_plan, self.tags_to_optimize[0]).shape[1]
+        self.probs = {
+            tag: torch.ones(1, plan_length, 1, num_categ) / num_categ
+            for tag, num_categ in num_categories.items()
+        }
+        self.num_categories = num_categories
+        self.population_size = population_size
+        self.num_elite = num_elite
+        self.step_size = step_size
+
+    def sample_plan_population(self):
+        # sample each tag separately
+        for tag in self.tags_to_optimize:
+            probs = self.probs[tag].repeat(self.population_size, 1, 1, 1)
+            sample = torch.distributions.Categorical(probs=probs).sample()
+            self.model.set_tags(self.plans, tag, sample)
+        return self.plans
+
+    def get_losses(self, plan):
+        pred = self.model.predict(self.past, plan)
+        # TODO: IMPLEMENT HERE THE LOSS CALCULATION
+        return sum((v**2).mean(dim=(1, 2)) for v in pred["mean"].values())
+
+    def update_probs(self, ind_elite):
+        for tag in self.tags_to_optimize:
+            plans_elite_tag = self.model.get_tags(self.plans, tag)[ind_elite, :, :]
+            for k in range(self.num_categories[tag]):
+                estimate_new = (1.0 * (plans_elite_tag == k)).mean(dim=0, keepdim=True)
+                estimate_old = self.probs[tag][:, :, :, k]
+                self.probs[tag][:, :, :, k] = (
+                    self.step_size * estimate_new + (1 - self.step_size) * estimate_old
+                )
+
+    def update_plan(self, ind_elite):
+        ind_best = ind_elite[0]
+        for tag in self.tags_to_optimize:
+            plans_tag = self.model.get_tags(self.plans, tag)
+            self.model.set_tags(
+                self.plan, tag, plans_tag[ind_best : ind_best + 1, :, :]
+            )
+
+    def step(self):
+        self.sample_plan_population()
+        losses = self.get_losses(self.plans)
+        ind_elite = (-losses).topk(self.num_elite).indices
+        self.update_probs(ind_elite)
+        self.update_plan(ind_elite)
