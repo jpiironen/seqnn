@@ -65,8 +65,12 @@ class Logger:
         actions: np.ndarray,
         rewards: np.ndarray,
     ):
-        df_act = pd.DataFrame(actions, columns=[f"act{i}" for i in range(actions.shape[1])])
-        df_obs = pd.DataFrame(obs_after, columns=[f"obs{i}" for i in range(obs_after.shape[1])])
+        df_act = pd.DataFrame(
+            actions, columns=[f"act{i}" for i in range(actions.shape[1])]
+        )
+        df_obs = pd.DataFrame(
+            obs_after, columns=[f"obs{i}" for i in range(obs_after.shape[1])]
+        )
         df_rew = pd.DataFrame(rewards, columns=["reward"])
         df = pd.concat((df_act, df_obs, df_rew), axis=1)
         return df
