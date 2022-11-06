@@ -59,7 +59,7 @@ if __name__ == "__main__":
         help="Number of planning steps at each state",
         default=5,
         required=False,
-        type=str,
+        type=int,
     )
     parser.add_argument(
         "--save_dir",
