@@ -84,7 +84,7 @@ class DataHandler:
         )
 
     @staticmethod
-    def df_to_dataset(df, config):
+    def df_to_dataset(df, config, past_only=False):
         if isinstance(df, (list, tuple)):
             # multiple data frames, so create a combination dataset
             datasets = [DataHandler.df_to_dataset(d, config) for d in df]
@@ -96,8 +96,12 @@ class DataHandler:
             group_name: torch.tensor(np.array(df[tags]), dtype=torch.float)
             for group_name, tags in config.task.grouping.items()
         }
+        if past_only:
+            seq_partitioning = config.task.horizon_past
+        else:
+            seq_partitioning = (config.task.horizon_past, config.task.horizon_future)
         return seqnn.data.dataset.DictSeqDataset(
             data_dict,
-            (config.task.horizon_past, config.task.horizon_future),
+            seq_partitioning,
             index=df.index,
         )
