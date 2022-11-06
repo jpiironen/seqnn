@@ -1,9 +1,20 @@
 import torch
+from seqnn.control.loss import PlanLoss
+from seqnn import SeqNN
 
 
 class AdamPlanner:
-    def __init__(self, model, data_past, control_plan, control_lims, lr=0.1):
+    def __init__(
+        self,
+        model: SeqNN,
+        plan_loss: PlanLoss,
+        data_past: dict,
+        control_plan: dict,
+        control_lims: dict,
+        lr: float = 0.1,
+    ):
         self.model = model
+        self.plan_loss = plan_loss
         self.past = data_past
         self.plan = control_plan
         # this will be held fixed
@@ -73,8 +84,11 @@ class AdamPlanner:
 
     def get_loss(self, plan):
         pred = self.model.predict(self.past, plan)
-        # TODO: IMPLEMENT HERE THE LOSS CALCULATION
-        return sum((v**2).mean() for v in pred["mean"].values())
+        trajectory = {
+            tag: self.model.get_tags(pred["mean"], tag)
+            for tag in self.plan_loss.get_relevant_tags()
+        }
+        return self.plan_loss(trajectory)
 
     def step(self):
         self.optimizer.zero_grad()
@@ -91,15 +105,18 @@ class AdamPlanner:
 class CategoricalCEMPlanner:
     def __init__(
         self,
-        model,
-        data_past,
-        control_plan,
-        num_categories,
-        population_size=128,
-        num_elite=16,
-        step_size=0.5,
+        model: SeqNN,
+        plan_loss: PlanLoss,
+        data_past: dict,
+        control_plan: dict,
+        num_categories: dict,
+        population_size: int = 128,
+        num_elite: int = 16,
+        step_size: float = 0.5,
     ):
+        assert step_size > 0.0 and step_size <= 1.0, "step_size must fall between (0,1]"
         self.model = model
+        self.plan_loss = plan_loss
         self.past = {
             key: tensor.repeat(population_size, 1, 1)
             for key, tensor in data_past.items()
@@ -128,10 +145,13 @@ class CategoricalCEMPlanner:
             self.model.set_tags(self.plans, tag, sample)
         return self.plans
 
-    def get_losses(self, plan):
-        pred = self.model.predict(self.past, plan)
-        # TODO: IMPLEMENT HERE THE LOSS CALCULATION
-        return sum((v**2).mean(dim=(1, 2)) for v in pred["mean"].values())
+    def get_losses(self, plans):
+        pred = self.model.predict(self.past, plans)
+        trajectory = {
+            tag: self.model.get_tags(pred["mean"], tag)
+            for tag in self.plan_loss.get_relevant_tags()
+        }
+        return self.plan_loss(trajectory)
 
     def update_probs(self, ind_elite):
         for tag in self.tags_to_optimize:
