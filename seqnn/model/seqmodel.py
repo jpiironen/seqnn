@@ -14,10 +14,11 @@ from seqnn.utils import get_cls, save_torch_state, load_torch_state
 
 
 class SeqNNLightning(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self, config, init_seed=True):
         super().__init__()
         self.config = config
-        pl.seed_everything(self.config.training.seed)
+        if init_seed:
+            pl.seed_everything(self.config.training.seed)
         self.model_core = ModelCore.create(config)
         self.scaler = self.create_scaler(config)
         self.data_handler = DataHandler(config)
@@ -106,9 +107,9 @@ class SeqNNLightning(pl.LightningModule):
 
 
 class SeqNN:
-    def __init__(self, config):
+    def __init__(self, config, init_seed=True):
         self.config = config
-        self.model = SeqNNLightning(config)
+        self.model = SeqNNLightning(config, init_seed)
 
     def train(
         self,
@@ -229,7 +230,7 @@ class SeqNN:
     def load(dir):
         dir = pathlib.Path(dir)
         config = SeqNNConfig.load(dir / "config.yaml")
-        model = SeqNN(config)
+        model = SeqNN(config, init_seed=False)
         load_torch_state(model.model.model_core, dir / "model_core.pt")
         load_torch_state(model.model.scaler, dir / "scaler.pt")
         return model
