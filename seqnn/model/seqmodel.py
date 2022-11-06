@@ -115,21 +115,25 @@ class SeqNN:
         self,
         data_train,
         data_valid=None,
-        max_epochs=1,
-        max_steps=-1,
+        epochs=None,
+        steps=None,
         overfit_batches=0.0,
         progressbar=True,
         dev_run=False,
         logdir=None,
     ):
+        assert (
+            epochs is not None or steps is not None
+        ), "Either epochs or steps must be specified"
+        steps = steps if steps is not None else -1
         loader_train = self.data_to_loader(data_train, train=True)
         loader_valid = self.data_to_loader(data_valid)
         self.fit_scalers(loader_train)
         trainer = pl.Trainer(
             fast_dev_run=dev_run,
             gradient_clip_val=self.config.training.max_grad_norm,
-            max_epochs=max_epochs,
-            max_steps=max_steps,
+            max_epochs=epochs,
+            max_steps=steps,
             enable_progress_bar=progressbar,
             log_every_n_steps=1,
             num_sanity_val_steps=-1,
