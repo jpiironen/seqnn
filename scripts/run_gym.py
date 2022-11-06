@@ -12,9 +12,9 @@ from seqnn.gymutils.agent import MPCAgent
 
 def get_episode(args):
     if args.render:
-        env = gym.make(args.env, render_mode="human")
+        env = gym.make(args.env, max_episode_steps=args.max_len, render_mode="human")
     else:
-        env = gym.make(args.env)
+        env = gym.make(args.env, max_episode_steps=args.max_len)
     if args.model:
         model = seqnn.load(args.model)
         plan_loss = get_plan_loss(args)
@@ -88,7 +88,7 @@ if __name__ == "__main__":
         type=float,
     )
     parser.add_argument("--render", action="store_true")
-    
+
     args = parser.parse_args()
 
     if args.save_dir is not None:
@@ -97,10 +97,8 @@ if __name__ == "__main__":
         logger = Logger(save_dir)
         for i in tqdm(range(args.num_episodes)):
             episode = get_episode(args)
-            episode.run(
-                callback=logger.callback, max_len=args.max_len, sleep=args.sleep
-            )
+            episode.run(callback=logger.callback, sleep=args.sleep)
     else:
         for _ in tqdm(range(args.num_episodes)):
             episode = get_episode(args)
-            episode.run(max_len=args.max_len, sleep=args.sleep)
+            episode.run(sleep=args.sleep)

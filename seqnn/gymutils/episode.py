@@ -9,14 +9,14 @@ class Episode:
         self.env = env
         self.agent = agent
 
-    def run(self, callback=None, max_len=None, sleep=0.0):
+    def run(self, callback=None, sleep=0.0):
 
         # start new episode
         obs_before, info = self.env.reset()
         done = False
+        truncated = False
 
-        steps = 0
-        while not done:
+        while not done and not truncated:
 
             time.sleep(sleep)
 
@@ -26,13 +26,10 @@ class Episode:
             # take step in environment
             obs, reward, done, truncated, info = self.env.step(action)
             if callback:
-                callback(obs_before, obs, action, reward, done, info)
+                callback(obs_before, obs, action, reward, done, truncated, info)
             self.agent.update(
                 obs_before=obs_before, obs_after=obs, action=action, reward=reward
             )
             obs_before = obs
-            steps += 1
-            if max_len is not None and steps == max_len:
-                break
 
         self.env.close()

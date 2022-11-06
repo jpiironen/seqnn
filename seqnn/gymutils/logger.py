@@ -19,6 +19,7 @@ class Logger:
         action,
         reward,
         done,
+        truncated,
         info,
     ):
         self.data.append(
@@ -29,7 +30,7 @@ class Logger:
                 "reward": reward,
             }
         )
-        if done:
+        if done or truncated:
             # save and reset
             self.data = self.stack_observations(self.data)
             self.save(self.save_dir / f"episode{self.episode}.json")
