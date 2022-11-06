@@ -172,7 +172,7 @@ class SeqNN:
             drop_last=False,
         )
 
-    def get_dataset(self, data):
+    def get_dataset(self, data, past_only=False):
         if data is None:
             return None
         if isinstance(data, torch.utils.data.DataLoader):
@@ -180,9 +180,11 @@ class SeqNN:
         if isinstance(data, torch.utils.data.Dataset):
             return data
         if isinstance(data, (list, tuple)):
-            return CombinationDataset([self.get_dataset(d) for d in data])
+            return CombinationDataset(
+                [self.get_dataset(d, past_only=past_only) for d in data]
+            )
         if isinstance(data, pd.DataFrame):
-            return DataHandler.df_to_dataset(data, self.config)
+            return DataHandler.df_to_dataset(data, self.config, past_only=past_only)
         raise NotImplementedError
 
     def get_likelihood(self):
