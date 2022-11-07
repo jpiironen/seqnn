@@ -19,3 +19,4 @@ __pycache__
 # misc
 .autoenv.zsh
 .autoenv_leave.zsh
+.DS_Store
