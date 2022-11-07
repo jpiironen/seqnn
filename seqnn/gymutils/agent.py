@@ -57,6 +57,15 @@ class MPCAgent(FiniteMemoryAgent):
         self.model = model
         self.plan_loss = plan_loss
         self.num_planning_steps = num_planning_steps
+        self.check_control_config()
+
+    def check_control_config(self):
+        assert (
+            len(self.model.config.task.controls_cont) == 0
+        ), "Optimization of continuous controls not implemented yet"
+        assert (
+            len(self.model.config.task.controls_cat) > 0
+        ), "No controls, cannot perform MPC"
 
     def get_df(self):
         return Logger.data_as_df(
@@ -74,11 +83,17 @@ class MPCAgent(FiniteMemoryAgent):
         dataset = self.model.get_dataset(df_past, past_only=True)
         past = get_data_sample(dataset, indices=-1)
 
-        # TODO: THIS CONTAINS HARDCODED STUFF, IMPLEMENT IN A PROPER WAY
+        task = self.model.config.task
+        tags_to_optimize = list(col for col in df_past.columns if "act" in col)
+        # NOTE: version below would be prettier, but difficult to ensure the correct ordering w.r.t the environment specs!
+        # tags_to_optimize = [
+        #    tag for group in task.controls_cat for tag in task.grouping[group]
+        # ]
         plan = {
-            "act": torch.zeros(self.model.config.task.horizon_future).view(1, -1, 1)
+            group: torch.zeros(1, task.horizon_future, len(task.grouping[group]))
+            for group in task.controls_cat
         }
-        num_categ = {"act0": 2}
+        num_categ = {tag: task.num_categories[tag] for tag in tags_to_optimize}
         planner = CategoricalCEMPlanner(
             self.model, self.plan_loss, past, plan, num_categ
         )
@@ -87,5 +102,9 @@ class MPCAgent(FiniteMemoryAgent):
             planner.step()
 
         # output the first action of the planned sequence
-        action = self.model.get_tags(plan, "act0").squeeze()[0].item()
-        return round(action)
+        action = (
+            self.model.get_tags(plan, tags_to_optimize)[0, 0, :].numpy().astype(int)
+        )
+        if len(action) == 1:
+            return action.item()
+        return action
