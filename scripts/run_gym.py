@@ -11,7 +11,11 @@ from seqnn.gymutils.agent import MPCAgent
 
 
 def get_episode(args):
-    if args.render:
+    if args.gif:
+        env = gym.make(
+            args.env, max_episode_steps=args.max_len, render_mode="rgb_array"
+        )
+    elif args.render:
         env = gym.make(args.env, max_episode_steps=args.max_len, render_mode="human")
     else:
         env = gym.make(args.env, max_episode_steps=args.max_len)
@@ -87,7 +91,14 @@ if __name__ == "__main__":
         default=0.0,
         type=float,
     )
-    parser.add_argument("--render", action="store_true")
+    parser.add_argument(
+        "--render",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--gif",
+        action="store_true",
+    )
 
     args = parser.parse_args()
 
@@ -97,7 +108,9 @@ if __name__ == "__main__":
         logger = Logger(save_dir)
         for i in tqdm(range(args.num_episodes)):
             episode = get_episode(args)
-            episode.run(callback=logger.callback, sleep=args.sleep)
+            frames = episode.run(callback=logger.callback, sleep=args.sleep)
+            if args.gif:
+                logger.save_gif(save_dir / f"episode{i}.gif", frames)
     else:
         for _ in tqdm(range(args.num_episodes)):
             episode = get_episode(args)
