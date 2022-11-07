@@ -111,7 +111,7 @@ class CategoricalCEMPlanner:
         control_plan: dict,
         num_categories: dict,
         population_size: int = 128,
-        num_elite: int = 16,
+        num_elite: int = 32,
         step_size: float = 0.5,
     ):
         assert step_size > 0.0 and step_size <= 1.0, "step_size must fall between (0,1]"
