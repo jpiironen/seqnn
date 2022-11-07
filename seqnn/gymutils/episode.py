@@ -15,10 +15,12 @@ class Episode:
         obs_before, info = self.env.reset()
         done = False
         truncated = False
+        frames = []
 
         while not done and not truncated:
 
             time.sleep(sleep)
+            frames.append(self.env.render())
 
             # choose action
             action = self.agent.get_action()
@@ -33,3 +35,4 @@ class Episode:
             obs_before = obs
 
         self.env.close()
+        return frames

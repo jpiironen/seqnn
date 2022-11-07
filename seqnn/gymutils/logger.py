@@ -1,3 +1,4 @@
+import imageio
 import json
 import pathlib
 import numpy as np
@@ -88,6 +89,11 @@ class Logger:
         return Logger.data_as_df(
             data["obs_before"], data["obs_after"], data["action"], data["reward"]
         )
+
+    @staticmethod
+    def save_gif(path, frames, fps=25):
+        duration = 1 / fps
+        imageio.mimsave(path, frames, duration=duration)
 
     @staticmethod
     def find_all_files(path, suffix):
