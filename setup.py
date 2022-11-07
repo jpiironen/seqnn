@@ -1,18 +1,21 @@
 from setuptools import setup, find_packages
 
 
-with open('requirements.txt', 'r') as file:
+with open("requirements.txt", "r") as file:
     requirements = file.read().splitlines()
 
-#version = (
-#    open("lab/__init__.py").readlines()[-1].split("=")[-1].strip().strip("'\"")
-#)
+with open("requirements_gym.txt", "r") as file:
+    requires_gym = file.read().splitlines()
+
+# version = (
+#    open("seqnn/__init__.py").readlines()[-1].split("=")[-1].strip().strip("'\"")
+# )
 
 setup(
     name="seqnn",
     description="",
-    #version=version,
+    # version=version,
     packages=find_packages(),
     install_requires=requirements,
-    include_package_data=True,
+    extras_require={"gym": requires_gym},
 )
