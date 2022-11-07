@@ -29,9 +29,10 @@ class SeqNNConfig(Config):
     def __init__(
         self,
         targets,
-        controls,
         horizon_past,
         horizon_future,
+        controls_continuous=None,
+        controls_categorical=None,
         likelihood="LikGaussian",
         likelihood_args={},
         model="NLDS",
@@ -47,15 +48,21 @@ class SeqNNConfig(Config):
         max_grad_norm=100.0,
         seed=42,
     ):
-        targets_grouped = self.standardize_variable_set(targets)
-        controls_grouped = self.standardize_variable_set(controls)
-        grouping = targets_grouped | controls_grouped
+        targets_grouped = self.standardize_variable_set_continuous(targets)
+        controls_grouped = self.standardize_variable_set_continuous(controls_continuous)
+        (
+            controls_cat_grouped,
+            num_categories,
+        ) = self.standardize_variable_set_categorical(controls_categorical)
+        grouping = targets_grouped | controls_grouped | controls_cat_grouped
         task_cfg = Config(
             targets=list(targets_grouped.keys()),
-            controls=list(controls_grouped.keys()),
+            controls_cont=list(controls_grouped.keys()),
+            controls_cat=list(controls_cat_grouped.keys()),
             horizon_past=horizon_past,
             horizon_future=horizon_future,
             grouping=grouping,
+            num_categories=num_categories,
         )
         lik_cfg = Config(
             cls="seqnn.model.likelihood." + likelihood,
@@ -72,6 +79,7 @@ class SeqNNConfig(Config):
                     args={},
                 )
                 for group in task_cfg.grouping.keys()
+                if group not in task_cfg.controls_cat
             }
         )
         optimizer_cfg = Config(
@@ -100,7 +108,7 @@ class SeqNNConfig(Config):
             training=training_cfg,
         )
 
-    def standardize_variable_set(self, vars):
+    def standardize_variable_set_continuous(self, vars):
         if vars is None:
             return {}
         if isinstance(vars, (list, tuple)):
@@ -122,6 +130,23 @@ class SeqNNConfig(Config):
             f"Got unknown type for targets/controls: {type(vars)}"
         )
 
+    def standardize_variable_set_categorical(self, vars):
+        if vars is None:
+            return {}, {}
+        assert isinstance(vars, dict)
+
+        for key, value in vars.items():
+            assert isinstance(
+                key, str
+            ), "In categorical variable dict, each key must be a string denoting the variable name"
+            assert isinstance(
+                value, int
+            ), "In categorical variable dict, each value must be an integer denoting the number of categories"
+
+        grouping = {key: [key] for key in vars.keys()}
+        num_categ = {key: value for key, value in vars.items()}
+        return grouping, num_categ
+
     def get_likelihood(self):
         return get_cls(self.lik.cls)(**self.lik.args)
 
@@ -129,7 +154,15 @@ class SeqNNConfig(Config):
         return sum(len(self.task.grouping[group]) for group in self.task.targets)
 
     def get_num_controls(self):
-        return sum(len(self.task.grouping[group]) for group in self.task.controls)
+        # number of controls from the model's perspective; so when using one-hot encoding,
+        # the contribution of each categorical variable to the final sum equals its number of categories
+        n = sum(len(self.task.grouping[group]) for group in self.task.controls_cont)
+        n += sum(
+            self.task.num_categories[tag]
+            for group in self.task.controls_cat
+            for tag in self.task.grouping[group]
+        )
+        return n
 
     def save(self, path):
         path = pathlib.Path(path)
@@ -144,9 +177,7 @@ class SeqNNConfig(Config):
 
     @staticmethod
     def from_dict(d):
-        config = SeqNNConfig(
-            targets=None, controls=None, horizon_past=None, horizon_future=None
-        )
+        config = SeqNNConfig(targets=None, horizon_past=None, horizon_future=None)
         d = {
             key: Config.from_dict(value) if isinstance(value, dict) else value
             for key, value in d.items()
