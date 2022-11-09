@@ -23,6 +23,12 @@ class Logger:
         truncated,
         info,
     ):
+
+        if isinstance(obs_before, tuple):
+            # this is simply a workaround to a bug that exist in gym.utils.play; at the beginning of the episode,
+            # obs_before can be a tuple of (obs_before, info), so pick just the first element to avoid problems
+            obs_before = obs_before[0]
+
         self.data.append(
             {
                 "obs_before": obs_before,
