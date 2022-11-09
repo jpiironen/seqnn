@@ -11,14 +11,12 @@ from seqnn.gymutils.agent import MPCAgent
 
 
 def get_episode(args):
-    if args.gif:
+    if args.render:
+        env = gym.make(args.env, max_episode_steps=args.max_len, render_mode="human")
+    else:
         env = gym.make(
             args.env, max_episode_steps=args.max_len, render_mode="rgb_array"
         )
-    elif args.render:
-        env = gym.make(args.env, max_episode_steps=args.max_len, render_mode="human")
-    else:
-        env = gym.make(args.env, max_episode_steps=args.max_len)
     if args.model:
         model = seqnn.load(args.model)
         plan_loss = get_plan_loss(args)
