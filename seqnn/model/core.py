@@ -15,6 +15,7 @@ class ModelCore(nn.Module):
         num_control,
         horizon_past,
         horizon_future,
+        diff_model=False,
     ):
         super().__init__()
         self.likelihood = likelihood
@@ -23,6 +24,10 @@ class ModelCore(nn.Module):
         self.num_output = self.get_num_outputs()
         self.horizon_past = horizon_past
         self.horizon_future = horizon_future
+        self.diff_model = diff_model
+        #if self.diff_model:
+            # a temporary limitation
+            #assert self.horizon_future == 1
 
     @staticmethod
     def create(config):
@@ -48,28 +53,40 @@ class ModelCore(nn.Module):
         return torch.split(tensor, (self.horizon_past, self.horizon_future), dim=1)
 
     def forward(
-        self, target_past, control_past, control_future, target_future=None, **kwargs
+        self,
+        target_past,
+        target_past_diff,
+        control_past,
+        control_future,
+        target_future=None,
+        target_future_diff=None,
+        **kwargs
     ):
         raise NotImplementedError
 
     def get_loss(
         self,
         target_past,
+        target_past_diff,
         control_past,
         target_future,
+        target_future_diff,
         control_future,
         aux_past=None,
         teacher_forcing=False,
     ):
         output = self(
             target_past,
+            target_past_diff,
             control_past,
             control_future,
             aux_past=aux_past,
             target_future=target_future,
+            target_future_diff=target_future_diff,
             teacher_forcing=teacher_forcing,
         )
-        losses = self.likelihood.get_loss(output, target_future)
+        labels = target_future_diff if self.diff_model else target_future
+        losses = self.likelihood.get_loss(output, labels)
         return losses
 
 
@@ -93,6 +110,7 @@ class NLDS(ModelCore):
         dropout=0.1,
         dropout_latent=0.0,
         act=nn.ReLU(),
+        diff_model=False,
     ):
         super().__init__(
             likelihood,
@@ -100,6 +118,7 @@ class NLDS(ModelCore):
             num_control,
             horizon_past,
             horizon_future,
+            diff_model=diff_model,
         )
         num_filters = ensure_list(num_filters)
         num_hidden_dynamics = ensure_list(num_hidden_dynamics)
@@ -144,10 +163,12 @@ class NLDS(ModelCore):
     def forward(
         self,
         target_past,
+        target_past_diff,
         control_past,
         control_future,
-        target_future=None,
         aux_past=None,
+        target_future=None,
+        target_future_diff=None,
         **kwargs
     ):
         # encode the past, and unroll the predictions about how the
@@ -205,11 +226,11 @@ class RNN(ModelCore):
         control_past,
         control_future,
         target_future=None,
+        target_future_diff=None,
         teacher_forcing=False,
         **kwargs
     ):
 
-        # batch_size, n_past, _ = target_past.shape
         _, n_future, _ = control_future.shape
 
         # encoding / burn-in

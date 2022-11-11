@@ -9,6 +9,7 @@ class DataHandler:
     def __init__(self, config) -> None:
         self.config = config
         self.targets = config.task.targets
+        self.targets_diff = config.task.targets_diff
         self.controls_cont = config.task.controls_cont
         self.controls_cat = config.task.controls_cat
         self.tag_to_group_and_index = self.create_tag_index()
@@ -79,6 +80,11 @@ class DataHandler:
         if self.targets[0] in data_dict:
             return torch.cat([data_dict[target] for target in self.targets], dim=2)
         return None
+    
+    def get_target_diff(self, data_dict):
+        if self.targets_diff[0] in data_dict:
+            return torch.cat([data_dict[target] for target in self.targets_diff], dim=2)
+        return None
 
     def split_target(self, data_tensor):
         groups = self.config.task.grouping
@@ -103,8 +109,10 @@ class DataHandler:
         )
         return (
             self.get_target(past),
+            self.get_target_diff(past),
             self.get_control(past, batch_size, len_past),
             self.get_target(future),
+            self.get_target_diff(future),
             self.get_control(future, batch_size, len_future),
         )
 

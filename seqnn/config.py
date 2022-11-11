@@ -49,14 +49,24 @@ class SeqNNConfig(Config):
         seed=42,
     ):
         targets_grouped = self.standardize_variable_set_continuous(targets)
+        targets_diff_grouped = {
+            group + "_diff": [tag + "_diff" for tag in tags]
+            for group, tags in targets_grouped.items()
+        }
         controls_grouped = self.standardize_variable_set_continuous(controls_continuous)
         (
             controls_cat_grouped,
             num_categories,
         ) = self.standardize_variable_set_categorical(controls_categorical)
-        grouping = targets_grouped | controls_grouped | controls_cat_grouped
+        grouping = (
+            targets_grouped
+            | targets_diff_grouped
+            | controls_grouped
+            | controls_cat_grouped
+        )
         task_cfg = Config(
             targets=list(targets_grouped.keys()),
+            targets_diff=list(targets_diff_grouped.keys()),
             controls_cont=list(controls_grouped.keys()),
             controls_cat=list(controls_cat_grouped.keys()),
             horizon_past=horizon_past,

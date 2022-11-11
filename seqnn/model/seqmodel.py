@@ -65,15 +65,19 @@ class SeqNNLightning(pl.LightningModule):
         future = self.to_scaled(future)
         (
             target_past,
+            target_past_diff,
             control_past,
             target_future,
+            target_future_diff,
             control_future,
         ) = self.data_handler.prepare_data(past, future, augment=True)
         teacher_forcing = np.random.rand() < self.config.training.teacher_forcing_prob
         losses = self.model_core.get_loss(
             target_past,
+            target_past_diff,
             control_past,
             target_future,
+            target_future_diff,
             control_future,
             teacher_forcing=teacher_forcing,
         )
@@ -88,14 +92,18 @@ class SeqNNLightning(pl.LightningModule):
         future = self.to_scaled(future)
         (
             target_past,
+            target_past_diff,
             control_past,
             target_future,
+            target_future_diff,
             control_future,
         ) = self.data_handler.prepare_data(past, future, augment=False)
         losses = self.model_core.get_loss(
             target_past,
+            target_past_diff,
             control_past,
             target_future,
+            target_future_diff,
             control_future,
             teacher_forcing=False,
         )
