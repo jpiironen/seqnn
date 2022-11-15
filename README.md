@@ -1,14 +1,12 @@
 # SeqNN
-
-<figure>
-<img src="https://jpiironen.github.io/material/seqnn/gym/CartPole-v1/episode0.gif" width="400"/>
-<figcaption><i> Model predictive control on Gym's CartPole environment</i></figcaption>
-</figure>
-
-<br>
 Codebase for experimenting with different types of neural network models for sequential data. The main purpose is to support models that can be used for model based reinforcement learning and control. 
 
 NOTE: The codebase is very much work in progress, and hence especially the documentation is very incomplete. Major changes in syntax/functionality are also possible.
+
+<figure>
+<img src="https://jpiironen.github.io/material/seqnn/gym/CartPole-v1/episode0.gif" width="400"/>
+<figcaption><i> Example: Model predictive control on Gym's CartPole environment</i></figcaption>
+</figure>
 
 
 ## Usage
@@ -20,7 +18,10 @@ The code snippets below illustrate the usage with a simple of the [CartPole envi
 This will collect and save some data from the CartPole environment with random policy.
 
 ```
-python -m scripts.run_gym --env CartPole-v1 --num_episodes 30 --save_dir data/gym/CartPole-v1/random
+python -m scripts.run_gym \
+  --env CartPole-v1 \
+  --num_episodes 30 \
+  --save_dir data/gym/CartPole-v1/random
 ```
 
 
@@ -82,5 +83,10 @@ tensorboard --logdir lightning_logs
 
 We can visualize the performance of the trained model in action using a command such as
 ```
-python -m scripts.run_gym --env CartPole-v1 --model models/gym/CartPole-v1/model0 --num_episodes 1 --max_len 500 --render
+python -m scripts.run_gym \
+  --env CartPole-v1 \
+  --model models/gym/CartPole-v1/model0 \
+  --num_episodes 1 \
+  --max_len 500 \
+  --render
 ```
