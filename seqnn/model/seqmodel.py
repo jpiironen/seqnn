@@ -14,9 +14,11 @@ from seqnn.utils import get_cls, save_torch_state, load_torch_state
 
 
 class SeqNNLightning(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self, config, init_seed=True):
         super().__init__()
         self.config = config
+        if init_seed:
+            pl.seed_everything(self.config.training.seed)
         self.model_core = ModelCore.create(config)
         self.scaler = self.create_scaler(config)
         self.data_handler = DataHandler(config)
@@ -42,6 +44,14 @@ class SeqNNLightning(pl.LightningModule):
             optimizer, **self.config.scheduler.args
         )
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
+
+    def zero_scaler_grad(self):
+        # zero out the gradient of the scaler parameters during training, so as to
+        # not affect the gradient statistics (will not have effect on the training since
+        # the scaler parameters are not optimized)
+        for p in self.scaler.parameters():
+            if p.grad is not None:
+                p.grad.zero_()
 
     def to_scaled(self, seq):
         return self.scaler.to_scaled(seq)
@@ -69,10 +79,13 @@ class SeqNNLightning(pl.LightningModule):
         )
         loss = losses.mean()
         self.log("train_loss", loss.item())
+        self.zero_scaler_grad()
         return loss
 
     def validation_step(self, batch, batch_idx):
         past, future = batch
+        past = self.to_scaled(past)
+        future = self.to_scaled(future)
         (
             target_past,
             control_past,
@@ -90,33 +103,38 @@ class SeqNNLightning(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         losses = torch.cat(outputs, dim=0)
-        self.log("valid_loss", losses.mean().item())
+        self.log("valid_loss", losses.mean().item(), prog_bar=True)
 
 
 class SeqNN:
-    def __init__(self, config):
+    def __init__(self, config, init_seed=True):
         self.config = config
-        self.model = SeqNNLightning(config)
+        self.model = SeqNNLightning(config, init_seed)
 
     def train(
         self,
         data_train,
         data_valid=None,
-        max_epochs=1,
-        max_steps=-1,
+        epochs=None,
+        steps=None,
         overfit_batches=0.0,
+        progressbar=True,
         dev_run=False,
         logdir=None,
     ):
+        assert (
+            epochs is not None or steps is not None
+        ), "Either epochs or steps must be specified"
+        steps = steps if steps is not None else -1
         loader_train = self.data_to_loader(data_train, train=True)
         loader_valid = self.data_to_loader(data_valid)
         self.fit_scalers(loader_train)
         trainer = pl.Trainer(
             fast_dev_run=dev_run,
             gradient_clip_val=self.config.training.max_grad_norm,
-            max_epochs=max_epochs,
-            max_steps=max_steps,
-            enable_progress_bar=True,
+            max_epochs=epochs,
+            max_steps=steps,
+            enable_progress_bar=progressbar,
             log_every_n_steps=1,
             num_sanity_val_steps=-1,
             track_grad_norm=2,
@@ -158,7 +176,7 @@ class SeqNN:
             drop_last=False,
         )
 
-    def get_dataset(self, data):
+    def get_dataset(self, data, past_only=False):
         if data is None:
             return None
         if isinstance(data, torch.utils.data.DataLoader):
@@ -166,12 +184,25 @@ class SeqNN:
         if isinstance(data, torch.utils.data.Dataset):
             return data
         if isinstance(data, (list, tuple)):
-            return CombinationDataset([self.get_dataset(d) for d in data])
+            return CombinationDataset(
+                [self.get_dataset(d, past_only=past_only) for d in data]
+            )
         if isinstance(data, pd.DataFrame):
-            return DataHandler.df_to_dataset(data, self.config)
+            return DataHandler.df_to_dataset(data, self.config, past_only=past_only)
         raise NotImplementedError
 
-    @torch.no_grad()
+    def get_likelihood(self):
+        return self.model.model_core.likelihood
+
+    def get_tags(self, data_dict, tags):
+        return self.model.data_handler.get_tags(data_dict, tags)
+
+    def set_tags(self, data_dict, tags, values):
+        self.model.data_handler.set_tags(data_dict, tags, values)
+
+    def get_group_and_index(self, tag):
+        return self.model.data_handler.get_group_and_index(tag)
+
     def predict(self, past, future, native=True):
         self.model.eval()
         past = self.model.to_scaled(past)
@@ -182,14 +213,15 @@ class SeqNN:
             _,
             control_future,
         ) = self.model.data_handler.prepare_data(past, future, augment=False)
+        likelihood = self.get_likelihood()
         pred = self.model(target_past, control_past, control_future)
-        pred_params = self.model.model_core.likelihood.parametrize_model_output(pred)
+        pred_params = likelihood.parametrize_model_output(pred)
         params_per_target = {
             key: self.model.data_handler.split_target(tensor)
             for key, tensor in pred_params.items()
         }
         if native:
-            params_per_target = self.model.model_core.likelihood.to_native(
+            params_per_target = likelihood.to_native(
                 params_per_target, self.model.scaler
             )
         return params_per_target
@@ -204,7 +236,7 @@ class SeqNN:
     def load(dir):
         dir = pathlib.Path(dir)
         config = SeqNNConfig.load(dir / "config.yaml")
-        model = SeqNN(config)
+        model = SeqNN(config, init_seed=False)
         load_torch_state(model.model.model_core, dir / "model_core.pt")
         load_torch_state(model.model.scaler, dir / "scaler.pt")
         return model

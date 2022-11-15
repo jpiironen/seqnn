@@ -29,12 +29,13 @@ class SeqNNConfig(Config):
     def __init__(
         self,
         targets,
-        controls,
         horizon_past,
         horizon_future,
+        controls_continuous=None,
+        controls_categorical=None,
         likelihood="LikGaussian",
         likelihood_args={},
-        model="RNN",
+        model="NLDS",
         model_args={},
         optimizer="SGD",
         optimizer_args={"lr": 0.001, "momentum": 0.9},
@@ -45,16 +46,23 @@ class SeqNNConfig(Config):
         validate_every_n_steps=100,
         teacher_forcing_prob=0.5,
         max_grad_norm=100.0,
+        seed=42,
     ):
-        targets_grouped = self.standardize_variable_set(targets)
-        controls_grouped = self.standardize_variable_set(controls)
-        grouping = targets_grouped | controls_grouped
+        targets_grouped = self.standardize_variable_set_continuous(targets)
+        controls_grouped = self.standardize_variable_set_continuous(controls_continuous)
+        (
+            controls_cat_grouped,
+            num_categories,
+        ) = self.standardize_variable_set_categorical(controls_categorical)
+        grouping = targets_grouped | controls_grouped | controls_cat_grouped
         task_cfg = Config(
             targets=list(targets_grouped.keys()),
-            controls=list(controls_grouped.keys()),
+            controls_cont=list(controls_grouped.keys()),
+            controls_cat=list(controls_cat_grouped.keys()),
             horizon_past=horizon_past,
             horizon_future=horizon_future,
             grouping=grouping,
+            num_categories=num_categories,
         )
         lik_cfg = Config(
             cls="seqnn.model.likelihood." + likelihood,
@@ -71,6 +79,7 @@ class SeqNNConfig(Config):
                     args={},
                 )
                 for group in task_cfg.grouping.keys()
+                if group not in task_cfg.controls_cat
             }
         )
         optimizer_cfg = Config(
@@ -84,9 +93,10 @@ class SeqNNConfig(Config):
         training_cfg = Config(
             batch_size=batch_size,
             batch_size_valid=batch_size_valid,
-            validate_every_n_steps=validate_every_n_steps,
-            teacher_forcing_prob=teacher_forcing_prob,
             max_grad_norm=max_grad_norm,
+            seed=seed,
+            teacher_forcing_prob=teacher_forcing_prob,
+            validate_every_n_steps=validate_every_n_steps,
         )
         super().__init__(
             task=task_cfg,
@@ -98,7 +108,7 @@ class SeqNNConfig(Config):
             training=training_cfg,
         )
 
-    def standardize_variable_set(self, vars):
+    def standardize_variable_set_continuous(self, vars):
         if vars is None:
             return {}
         if isinstance(vars, (list, tuple)):
@@ -107,22 +117,52 @@ class SeqNNConfig(Config):
             return {v: [v] for v in vars}
         if isinstance(vars, dict):
             for key, value in vars.items():
-                assert isinstance(key, str)
-                assert isinstance(value, str)
+                assert isinstance(
+                    key, str
+                ), "If targets/controls is a dict, then each key must be a string"
+                for v in ensure_list(value):
+                    assert isinstance(
+                        v, str
+                    ), "If targets/controls is a dict, then each value must be a list of strings"
             vars = {key: ensure_list(value) for key, value in vars.items()}
             return vars
-        raise NotImplementedError(f"Got unknown type variable set: {type(vars)}")
+        raise NotImplementedError(
+            f"Got unknown type for targets/controls: {type(vars)}"
+        )
+
+    def standardize_variable_set_categorical(self, vars):
+        if vars is None:
+            return {}, {}
+        assert isinstance(vars, dict)
+
+        for key, value in vars.items():
+            assert isinstance(
+                key, str
+            ), "In categorical variable dict, each key must be a string denoting the variable name"
+            assert isinstance(
+                value, int
+            ), "In categorical variable dict, each value must be an integer denoting the number of categories"
+
+        grouping = {key: [key] for key in vars.keys()}
+        num_categ = {key: value for key, value in vars.items()}
+        return grouping, num_categ
 
     def get_likelihood(self):
         return get_cls(self.lik.cls)(**self.lik.args)
 
     def get_num_targets(self):
-        # TODO: DUMMY
-        return len(self.task.targets)
+        return sum(len(self.task.grouping[group]) for group in self.task.targets)
 
     def get_num_controls(self):
-        # TODO: DUMMY
-        return len(self.task.controls)
+        # number of controls from the model's perspective; so when using one-hot encoding,
+        # the contribution of each categorical variable to the final sum equals its number of categories
+        n = sum(len(self.task.grouping[group]) for group in self.task.controls_cont)
+        n += sum(
+            self.task.num_categories[tag]
+            for group in self.task.controls_cat
+            for tag in self.task.grouping[group]
+        )
+        return n
 
     def save(self, path):
         path = pathlib.Path(path)
@@ -137,9 +177,7 @@ class SeqNNConfig(Config):
 
     @staticmethod
     def from_dict(d):
-        config = SeqNNConfig(
-            targets=None, controls=None, horizon_past=None, horizon_future=None
-        )
+        config = SeqNNConfig(targets=None, horizon_past=None, horizon_future=None)
         d = {
             key: Config.from_dict(value) if isinstance(value, dict) else value
             for key, value in d.items()

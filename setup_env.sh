@@ -10,4 +10,4 @@ conda env create -n $envname -f ./environment.yaml
 #python -m nltk.downloader all
 
 conda activate $envname
-pip install -e .
+pip install -e ".[gym]"

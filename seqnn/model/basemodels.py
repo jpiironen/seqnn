@@ -5,17 +5,18 @@ from seqnn.utils import ensure_list
 
 
 class MLP(nn.Module):
+    """
+    Multilayer perceptron with an arbitrary number of layers.
+    """
+
     def __init__(
         self,
         sizes,
         dropout=0.0,
         dropout_input=0.0,
         act=nn.ReLU(),
-        dropout_before_act=True,
+        dropout_before_act=False,
     ):
-        """
-        Multilayer perceptron with an arbitrary number of layers.
-        """
         super(MLP, self).__init__()
         self.sizes = sizes
         self.n_inputs = sizes[0]
@@ -42,7 +43,9 @@ class MLP(nn.Module):
 
 
 class CNN1d(nn.Module):
-    """1D convolutional net, applies convolution along the last dimension of the given tensor"""
+    """
+    1D convolutional net, applies convolution along the last dimension of the given tensor
+    """
 
     def __init__(
         self,
@@ -52,7 +55,7 @@ class CNN1d(nn.Module):
         kernel_size=3,
         dropout=0.0,
         dropout_between=None,
-        dropout_before_act=True,
+        dropout_before_act=False,
         act=nn.ReLU(),
     ):
         super().__init__()
