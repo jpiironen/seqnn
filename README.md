@@ -1,7 +1,7 @@
 # SeqNN
 
 <figure>
-<img src="demo/testepisode/07-11-2022-15:45:27/episode0.gif" alt="some text" width="400"/>
+<img src="https://jpiironen.github.io/material/seqnn/gym/CartPole-v1/episode0.gif" width="400"/>
 <figcaption><i> Model predictive control on Gym's CartPole environment</i></figcaption>
 </figure>
 
