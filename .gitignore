@@ -14,7 +14,9 @@ __pycache__
 
 # editors
 .idea
+.vscode
 
 # misc
 .autoenv.zsh
 .autoenv_leave.zsh
+.DS_Store
