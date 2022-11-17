@@ -44,8 +44,9 @@ for path in Logger.find_all_files(f"data/gym/{envname}/random", ".json"):
     df = Logger.load_episode_as_df(path)
     dfs.append(df)
 
+# split into training and validation sets
 np.random.seed(3429)
-valid_idx = np.random.choice(len(dfs), 3, replace=False)
+valid_idx = np.random.choice(len(dfs), 5, replace=False)
 dfs_train = [df for i, df in enumerate(dfs) if i not in valid_idx]
 dfs_valid = [df for i, df in enumerate(dfs) if i in valid_idx]
 
@@ -69,7 +70,6 @@ config = SeqNNConfig(
 model = SeqNN(config)
 model.train(dfs_train, dfs_valid, steps=1.5e4)
 model.save(f"models/gym/{envname}/model0")
-
 ```
 
 ### Training logs
