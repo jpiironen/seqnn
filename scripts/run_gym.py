@@ -41,6 +41,26 @@ def get_plan_loss(args):
             weights={"obs0": 0.1, "obs1": 1.0},
             end_only=True,
         )
+    elif args.env == "LunarLander-v2":
+        return Setpoint(
+            reference={
+                "obs0": 0.0,
+                "obs1": 0.5,
+                "obs2": 0.0,
+                "obs3": 0.0,
+                "obs4": 0.0,
+                "obs5": 0.0,
+            },
+            weights={
+                "obs0": 1.0,
+                "obs1": 0.5,
+                "obs2": 0.3,
+                "obs3": 0.3,
+                "obs4": 5.0,
+                "obs5": 5.0,
+            },
+            end_only=True,
+        )
     raise NotImplementedError(f"No goal specified for environment '{args.env}'")
 
 
