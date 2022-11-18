@@ -11,6 +11,7 @@ class DataHandler:
         self.targets = config.task.targets
         self.controls_cont = config.task.controls_cont
         self.controls_cat = config.task.controls_cat
+        self.controls_all = self.controls_cont + self.controls_cat
         self.tag_to_group_and_index = self.create_tag_index()
 
     def create_tag_index(self):
@@ -90,17 +91,16 @@ class DataHandler:
         return {group: data for group, data in zip(self.targets, data_splitted)}
 
     def prepare_data(self, past, future, augment=False):
-        # TODO: implement augmentation
+        # TODO: implement augmentation and imputation
         # if augment:
         #    past, future = self.augment(past, future)
-
         # past, future = self.impute(past, future)
         batch_size, len_past, _ = past[self.targets[0]].shape
-        len_future = (
-            future[self.targets[0]].shape[1]
-            if self.targets[0] in future
-            else self.config.task.horizon_future
-        )
+        len_future = self.config.task.horizon_future
+        for group in self.targets + self.controls_all:
+            if group in future:
+                len_future = future[group].shape[1]
+                break
         return (
             self.get_target(past),
             self.get_control(past, batch_size, len_past),

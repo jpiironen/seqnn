@@ -52,10 +52,11 @@ class RandomAgent(FiniteMemoryAgent):
 
 
 class MPCAgent(FiniteMemoryAgent):
-    def __init__(self, env, model, plan_loss, num_planning_steps=5):
+    def __init__(self, env, model, plan_loss, plan_horizon=None, num_planning_steps=5):
         super().__init__(env, memory_length=model.config.task.horizon_past)
         self.model = model
         self.plan_loss = plan_loss
+        self.plan_horizon = plan_horizon if plan_horizon is not None else self.model.config.task.horizon_future
         self.num_planning_steps = num_planning_steps
         self.check_control_config()
 
@@ -85,12 +86,13 @@ class MPCAgent(FiniteMemoryAgent):
 
         task = self.model.config.task
         tags_to_optimize = list(col for col in df_past.columns if "act" in col)
-        # NOTE: version below would be prettier, but difficult to ensure the correct ordering w.r.t the environment specs!
+        # NOTE: version below would be prettier, but difficult to ensure 
+        # the correct ordering w.r.t the environment specs!
         # tags_to_optimize = [
         #    tag for group in task.controls_cat for tag in task.grouping[group]
         # ]
         plan = {
-            group: torch.zeros(1, task.horizon_future, len(task.grouping[group]))
+            group: torch.zeros(1, self.plan_horizon, len(task.grouping[group]))
             for group in task.controls_cat
         }
         num_categ = {tag: task.num_categories[tag] for tag in tags_to_optimize}

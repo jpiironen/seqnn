@@ -20,7 +20,13 @@ def get_episode(args):
     if args.model:
         model = seqnn.load(args.model)
         plan_loss = get_plan_loss(args)
-        agent = MPCAgent(env, model, plan_loss, num_planning_steps=args.planning_steps)
+        agent = MPCAgent(
+            env,
+            model,
+            plan_loss,
+            plan_horizon=args.plan_horizon,
+            num_planning_steps=args.planning_steps,
+        )
         episode = Episode(env, agent)
     else:
         # use random actions
@@ -60,6 +66,13 @@ if __name__ == "__main__":
         "--planning_steps",
         help="Number of planning steps at each state",
         default=5,
+        required=False,
+        type=int,
+    )
+    parser.add_argument(
+        "--plan_horizon",
+        help="Number of time steps the model predicts into the future. If not given, uses the same horizon as what was used during the training.",
+        default=None,
         required=False,
         type=int,
     )
