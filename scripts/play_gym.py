@@ -38,7 +38,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.env == "CartPole-v0":
+    if args.env == "CartPole-v1":
         keymap = {
             (pygame.K_LEFT,): 0,
             (pygame.K_RIGHT,): 1,
