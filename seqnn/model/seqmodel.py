@@ -31,7 +31,7 @@ class SeqNNLightning(pl.LightningModule):
             args = scaler_spec["args"]
             ndim = len(config.task.grouping[group])
             scalers[group] = get_cls(cls_name)(ndim, **args)
-        return seqnn.data.scalers.ScalerCollection(scalers)
+        return seqnn.data.scalers.PastFutureScalerCollection(scalers)
 
     def forward(self, *args, **kwargs):
         return self.model_core(*args, **kwargs)
@@ -53,16 +53,15 @@ class SeqNNLightning(pl.LightningModule):
             if p.grad is not None:
                 p.grad.zero_()
 
-    def to_scaled(self, seq):
-        return self.scaler.to_scaled(seq)
+    def to_scaled(self, past, future):
+        return self.scaler.to_scaled(past, future)
 
-    def to_native(self, seq):
-        return self.scaler.to_native(seq)
+    def to_native(self, past, future):
+        return self.scaler.to_native(past, future)
 
     def training_step(self, batch, batch_idx):
         past, future = batch
-        past = self.to_scaled(past)
-        future = self.to_scaled(future)
+        past, future = self.to_scaled(past, future)
         (
             target_past,
             control_past,
@@ -84,8 +83,7 @@ class SeqNNLightning(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         past, future = batch
-        past = self.to_scaled(past)
-        future = self.to_scaled(future)
+        past, future = self.to_scaled(past, future)
         (
             target_past,
             control_past,
@@ -148,9 +146,8 @@ class SeqNN:
         trainer.fit(self.model, loader_train, loader_valid)
 
     def fit_scalers(self, dataloader):
-        for batch in dataloader:
-            for seq in batch:
-                self.model.scaler.update_stats(seq)
+        for past, future in dataloader:
+            self.model.scaler.update_stats(past, future)
 
     def data_to_loader(self, data, train=False):
         if isinstance(data, torch.utils.data.DataLoader):
@@ -212,8 +209,7 @@ class SeqNN:
 
     def predict(self, past, future, native=True):
         self.model.eval()
-        past = self.model.to_scaled(past)
-        future = self.model.to_scaled(future)
+        past, future = self.model.to_scaled(past, future)
         (
             target_past,
             control_past,
@@ -228,8 +224,11 @@ class SeqNN:
             for key, tensor in pred_params.items()
         }
         if native:
+            def to_native(future_dict):
+                _, fut_dict_nat = self.model.scaler.to_native(past, future_dict)
+                return fut_dict_nat
             params_per_target = likelihood.to_native(
-                params_per_target, self.model.scaler
+                params_per_target, to_native
             )
         return params_per_target
 
