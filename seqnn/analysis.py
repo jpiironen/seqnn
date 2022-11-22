@@ -38,20 +38,25 @@ def plot_prediction(
 
     index = 0
     for tag in tags_pred:
-        obs_past = model.get_tags(past, tag)
-        obs_future = model.get_tags(future, tag)
         pred = model.get_tags(pred_all["mean"], tag)
         assert (
             pred.shape[0] == 1
-        ), "Prediction visualization for batch_size > 0 not implemented"
+        ), "Prediction visualization for batch_size > 1 not implemented"
+        obs_past = model.get_tags(past, tag)
         obs_past = obs_past[0, :, 0]
-        obs_future = obs_future[0, :, 0]
         pred = pred[0, :, 0]
+        try:
+            obs_future = model.get_tags(future, tag)
+            obs_future = obs_future[0, :, 0]
+        except:
+            obs_future = None
+            pass
 
         x_past = np.arange(-len(obs_past), 0) + 1
-        x_future = np.arange(len(obs_future)) + 1
+        x_future = np.arange(len(pred)) + 1
         ax[index].plot(x_past, obs_past, ".", color="k")
-        ax[index].plot(x_future, obs_future, ".", color="gray")
+        if obs_future is not None:
+            ax[index].plot(x_future, obs_future, ".", color="gray")
         ax[index].plot(x_future, pred, "-", color="C1")
         if tag in lims:
             ax[index].set_ylim(lims[tag])
