@@ -53,11 +53,11 @@ def get_plan_loss(args):
             },
             weights={
                 "obs0": 1.0,
-                "obs1": 0.5,
-                "obs2": 0.3,
-                "obs3": 0.3,
-                "obs4": 5.0,
-                "obs5": 5.0,
+                "obs1": 1.0,
+                "obs2": 0.5,
+                "obs3": 0.5,
+                "obs4": 1.0,
+                "obs5": 1.0,
             },
             end_only=True,
         )
