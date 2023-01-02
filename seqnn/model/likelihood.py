@@ -6,6 +6,9 @@ class Likelihood:
     def real_to_positive(self, x):
         return nn.functional.softplus(x + 0.5)
 
+    def is_discrete(self):
+        raise NotImplementedError
+
     def get_num_parameters(self):
         raise NotImplementedError
 
@@ -21,6 +24,9 @@ class Likelihood:
     def sample(self, model_output):
         raise NotImplementedError
 
+    def most_probable(self, model_output):
+        raise NotImplementedError
+
     def quantile(self, model_output, prob):
         raise NotImplementedError
 
@@ -28,6 +34,9 @@ class Likelihood:
 class LikGaussian(Likelihood):
     def __init__(self):
         super().__init__()
+
+    def is_discrete(self):
+        return False
 
     def get_num_parameters(self):
         return 2
@@ -66,6 +75,10 @@ class LikGaussian(Likelihood):
         p = self.parametrize_model_output(model_output)
         return torch.distributions.Normal(p["mean"], p["scale"]).sample()
 
+    def most_probable(self, model_output):
+        p = self.parametrize_model_output(model_output)
+        return p["mean"]
+
     def quantile(self, model_output, prob):
         p = self.parametrize_model_output(model_output)
         return torch.distributions.Normal(p["mean"], p["scale"]).icdf(prob)
@@ -75,6 +88,9 @@ class LikCategorical(Likelihood):
     def __init__(self, num_classes):
         super().__init__()
         self.num_classes = num_classes
+
+    def is_discrete(self):
+        return True
 
     def get_num_parameters(self):
         return self.num_classes
@@ -88,3 +104,7 @@ class LikCategorical(Likelihood):
 
     def sample(self, model_output):
         return torch.distributions.Categorical(logits=model_output).sample()
+
+    def most_probable(self, model_output):
+        p = self.parametrize_model_output(model_output)
+        return p["probs"].max(dim=-1, keepdims=True).indices
