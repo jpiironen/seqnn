@@ -33,8 +33,8 @@ class SeqNNLightning(pl.LightningModule):
             scalers[group] = get_cls(cls_name)(ndim, **args)
         return seqnn.data.scalers.PastFutureScalerCollection(scalers)
 
-    def forward(self, *args, **kwargs):
-        return self.model_core(*args, **kwargs)
+    def generate(self, *args, **kwargs):
+        return self.model_core.generate(*args, **kwargs)
 
     def configure_optimizers(self):
         optimizer = get_cls(self.config.optimizer.cls)(
@@ -238,7 +238,7 @@ class SeqNN:
             control_future,
         ) = self.model.data_handler.prepare_data(past, future, augment=False)
         likelihood = self.get_likelihood()
-        pred = self.model(target_past, control_past, control_future)
+        pred = self.model.generate(target_past, control_past, control_future, sample=False)
         pred_params = likelihood.parametrize_model_output(pred)
         params_per_target = {
             key: self.model.data_handler.split_target(tensor)
