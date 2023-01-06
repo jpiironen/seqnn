@@ -405,80 +405,44 @@ class Transformer(ModelCore):
             else:
                 vars = target
             last_dim = self.num_features if embed else 1
-            sequence_embedded = (
-                vars.transpose(2, 3).contiguous().view(batch_size, -1, last_dim)
-            )
+            sequence = vars.transpose(2, 3).contiguous().view(batch_size, -1, last_dim)
         else:
-            # TODO: THIS DOES NOT USE argument embed yet
-            raise NotImplementedError
-            target = self.embedding_target(target)
+            target = self.embedding_target(target) if embed else target
             if self.has_controls():
-                control = self.embedding_control(control)
+                control = self.embedding_control(control) if embed else control
                 vars = (target, control) if control_last else (control, target)
-                # TODO: CHECK THAT THIS WORKS AS EXPECTED
-                sequence_embedded = torch.cat(vars, dim=2).view(
-                    batch_size, -1, self.num_features
-                )
+                vars = torch.cat(vars, dim=2)
             else:
-                sequence_embedded = target
-        return sequence_embedded
+                vars = target
+            last_dim = self.num_features if embed else 1
+            sequence = vars.view(batch_size, -1, last_dim)
 
-    # def sequence_to_variables(self, sequence, control_last=False):
-    #    batch_size = sequence.shape[0]
-    #    if self.sequence_dims:
-    #
-    #        if self.has_controls():
-    #            # TODO: REMEMBER TO TAKE INTO ACCOUNT CONTROL_LAST
-    #            raise NotImplementedError
-    #        else:
-    #            # TODO: THIS IS INCORRECT, BECAUSE WE SHOULD MATCH PREDICTION OF POSITION X WITH LABEL OF POSITION X+1
-    #            seq_reshaped = sequence.view(
-    #                batch_size, -1, self.num_target, self.num_features
-    #            )
-    #            readouts = [
-    #                readout(seq_reshaped[:, :, k, :])
-    #                for k, readout in enumerate(self.readout_target)
-    #            ]
-    #            target = torch.stack(readouts, dim=-1)
-    #            target = target.transpose(2, 3)
-    #            control = None
-    #
-    #    else:
-    #        if self.has_controls():
-    #            seq_reshaped = sequence.view(batch_size, -1, 2, self.num_features)
-    #            if control_last:
-    #                # when control appears last in the input sequence, prediction for target appears last in the output sequence
-    #                control_embedded, target_embedded = torch.split(
-    #                    seq_reshaped, [1, 1], dim=2
-    #                )
-    #            else:
-    #                # when control appears first in the input sequence, prediction for target appears first in the output sequence
-    #                target_embedded, control_embedded = torch.split(
-    #                    seq_reshaped, [1, 1], dim=2
-    #                )
-    #
-    #            target = self.readout_target(target_embedded.squeeze(2))
-    #            if self.readout_control:
-    #                control = self.readout_control(control_embedded.squeeze(2))
-    #            else:
-    #                control = None
-    #        else:
-    #            target = self.readout_target(sequence)
-    #            control = None
-    #    return target, control
+        return sequence
 
     def read_output(self, sequence, control_last=False, offset=0):
         batch_size = sequence.shape[0]
         if self.sequence_dims:
             # combine readouts into a list and order them appropriately so that each output representation
-            # will be processed by correct readout layer. if offset == 0, then the input sequence is assumed to be
-            #  u_t[1], u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n], and if offset == 1, the input sequence is assumed to be
-            #  u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n], u_{t+1}[1] etc.
-            # (+1 comes from the fact that the prediction is always for the next symbol in the sequence)
+            # will be processed by correct readout layer.
+            #
+            # if control_last == False and offset == 0,
+            # then the input sequence is assumed to be
+            #   u_t[1], u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n],
+            # and if offset == 1,
+            #   u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n], u_{t+1}[1]
+            # etc.
+            #
+            # if control_last == True and offset 0,  the input sequence is assumed to be
+            #   y_t[1], y_t[2] ..., y_t[n], u_t[1], u_t[2], ..., u_t[m]
+            # and if offset == 1,
+            #   y_t[2] ..., y_t[n], u_t[1] u_t[2], ..., u_t[m], y_{t+1}[1]
+            # etc.
+            #
             if control_last:
                 readouts_all = list(self.readout_target) + list(self.readout_control)
             else:
                 readouts_all = list(self.readout_control) + list(self.readout_target)
+            # here +1 comes from the fact that the prediction is always for the next symbol in the sequence
             readouts_all = readouts_all[1 + offset :] + readouts_all[: 1 + offset]
             seq_reshaped = sequence.view(
                 batch_size, -1, self.num_target + self.num_control, self.num_features
@@ -491,7 +455,21 @@ class Transformer(ModelCore):
             seq_output = seq_output.transpose(2, 3)
             seq_output = seq_output.reshape(batch_size, -1, seq_output.shape[3])
         else:
-            raise NotImplementedError
+            if control_last:
+                readouts_all = [self.readout_target] + ensure_list(self.readout_control)
+            else:
+                readouts_all = ensure_list(self.readout_control) + [self.readout_target]
+            readouts_all = readouts_all[1 + offset :] + readouts_all[: 1 + offset]
+            seq_reshaped = sequence.view(
+                batch_size, -1, 1 + (self.num_control > 0), self.num_features
+            )
+            readouts = [
+                readout(seq_reshaped[:, :, k, :])
+                for k, readout in enumerate(readouts_all)
+            ]
+            seq_output = torch.stack(readouts, dim=-1)
+            seq_output = seq_output.transpose(2, 3)
+            seq_output = seq_output.reshape(batch_size, -1, seq_output.shape[3])
         return seq_output
 
     def get_loss(
@@ -505,7 +483,10 @@ class Transformer(ModelCore):
     ):
         target_all = torch.cat((target_past, target_future), dim=1)
         control_all = torch.cat((control_past, control_future), dim=1)
-        offset = torch.randint(self.num_target + self.num_control, (1,)).item()
+        if self.sequence_dims:
+            offset = torch.randint(self.num_target + self.num_control, (1,)).item()
+        else:
+            offset = torch.randint(1 + (self.num_control > 0), (1,)).item()
         n = self.model.get_memory_length()
         x_all = self.variables_to_sequence(target_all, control_all)
         y_all = self.variables_to_sequence(target_all, control_all, embed=False)
@@ -568,19 +549,12 @@ class Transformer(ModelCore):
                         )
                         x = torch.cat((x, x_next), dim=1)
             else:
-                raise NotImplementedError
 
                 # if the sequence length is too large, we need to crop it to the memory length of the model
                 x_crop = x if x.shape[1] <= memory_length else x[:, -memory_length:, :]
                 output = self.model(x_crop)
-                ###
-                pred = self.read_output(output)[:, -1:, :]
+                pred = self.read_output(output, control_last=True)[:, -1:, :]
                 preds.append(pred)
-                ###
-
-                # pred_target, _ = self.sequence_to_variables(output, control_last=True)
-                # pred = pred_target[:, -1:, :]
-                # preds.append(pred)
 
                 if sample:
                     target_next = self.likelihood.sample(pred)
