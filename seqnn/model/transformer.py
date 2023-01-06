@@ -76,6 +76,7 @@ class GenerativeTransformer(nn.Module):
         """
         super().__init__()
         self.num_features = num_features
+        self.memory_length = max_seq_len
         if learn_pos_encoding:
             self.positional_encoding = PositionalEncodingLearnable(
                 num_features, max_seq_len, reverse=reverse_pos_encoding
@@ -99,6 +100,9 @@ class GenerativeTransformer(nn.Module):
             ]
         )
         self.ln = nn.LayerNorm(num_features)
+
+    def get_memory_length(self):
+        return self.memory_length
 
     def forward(self, x):
         assert x.ndim == 3
@@ -164,10 +168,14 @@ class PositionalEncodingLearnable(nn.Module):
         super().__init__()
         assert (num_features % 2) == 0, "num_features should be an even number."
         self.positional_encoding = torch.nn.Embedding(max_len, num_features)
+        self.max_len = max_len
         self.reverse = reverse
 
     def forward(self, x):
         seq_len = x.size(1)
+        assert (
+            seq_len <= self.max_len
+        ), "Got a sequence that is longer than the maximum memory length"
         # TODO: use same device as x
         position = torch.arange(0, seq_len, dtype=torch.long, device="cpu").unsqueeze(0)
         encoding = self.positional_encoding(position)
