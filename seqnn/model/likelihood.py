@@ -42,10 +42,15 @@ class LikGaussian(Likelihood):
         return 2
 
     def parametrize_model_output(self, x):
-        assert x.ndim == 3
-        num_obs = int(x.shape[2] / 2)
-        mean, scale_unconstrained = torch.split(x, (num_obs, num_obs), dim=2)
-        scale = self.real_to_positive(scale_unconstrained)
+        assert x.ndim == 3 or x.ndim == 4
+        if x.ndim == 3:
+            num_obs = int(x.shape[2] / 2)
+            mean, scale_unconstrained = torch.split(x, (num_obs, num_obs), dim=2)
+            scale = self.real_to_positive(scale_unconstrained)
+        else:
+            assert x.shape[3] == 2
+            mean = x[:, :, :, 0]
+            scale = self.real_to_positive(x[:, :, :, 1])
         return {"mean": mean, "scale": scale}
 
     def to_native(self, param, to_native_lambda):
