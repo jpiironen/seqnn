@@ -79,7 +79,7 @@ class GenerativeTransformer(nn.Module):
         self.memory_length = max_seq_len
         if learn_pos_encoding:
             self.positional_encoding = PositionalEncodingLearnable(
-                num_features, max_seq_len, reverse=reverse_pos_encoding
+                num_features, max_seq_len
             )
         else:
             self.positional_encoding = PositionalEncoding(
@@ -113,28 +113,6 @@ class GenerativeTransformer(nn.Module):
             x = block(x)
         return x
 
-    # @torch.no_grad()
-    # def generate(self, x, max_new_tokens, temperature=1.0, sample=False, top_k=None):
-    #    '''
-    #    This function is a modified version of
-    #    https://github.com/karpathy/minGPT/blob/7218bcfa527c65f164de791099de715b81a95106/mingpt/model.py#L283
-    #    '''
-    #    for _ in range(max_new_tokens):
-    #        # if the sequence length is too large, we need to crop it to the memory length of the model
-    #        x_crop = x if x.shape[1] <= self.memory_len else x[:, -self.memory_len :]
-    #        logits = self(x_crop)
-    #        logits = logits[:, -1, :] / temperature
-    #        if top_k is not None:
-    #            v, _ = torch.topk(logits, top_k)
-    #            logits[logits < v[:, [-1]]] = -float("Inf")
-    #        probs = torch.nn.functional.softmax(logits, dim=-1)
-    #        if sample:
-    #            x_next = torch.multinomial(probs, num_samples=1)
-    #        else:
-    #            _, x_next = torch.topk(probs, k=1, dim=-1)
-    #        x = torch.cat((x, x_next), dim=1)
-    #    return x
-
 
 class PositionalEncoding(nn.Module):
     """
@@ -164,26 +142,20 @@ class PositionalEncoding(nn.Module):
 
 
 class PositionalEncodingLearnable(nn.Module):
-    def __init__(self, num_features, max_len, scale_init=0.1, reverse=False):
+    def __init__(self, num_features, max_len):
         super().__init__()
         assert (num_features % 2) == 0, "num_features should be an even number."
         self.positional_encoding = torch.nn.Embedding(max_len, num_features)
         self.max_len = max_len
-        self.reverse = reverse
 
     def forward(self, x):
         seq_len = x.size(1)
         assert (
             seq_len <= self.max_len
         ), "Got a sequence that is longer than the maximum memory length"
-        # TODO: use same device as x
-        position = torch.arange(0, seq_len, dtype=torch.long, device="cpu").unsqueeze(0)
+        position = torch.arange(0, seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
         encoding = self.positional_encoding(position)
         return x + encoding
-        # TODO: implement the reverse logic
-        # if self.reverse:
-        #    return (x.flip(1) + self.positional_encoding[:, : x.size(1), :]).flip(1)
-        # return x + self.positional_encoding[:, : x.size(1), :]
 
 
 # def get_relative_positional_encoding(length1:int, length2:int, d_model:int, device:torch.device):
