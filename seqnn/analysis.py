@@ -33,7 +33,9 @@ def plot_prediction(
         ncols = int(np.ceil(np.sqrt(nplots)))
     nrows = int(np.ceil(nplots / ncols))
     fig, ax = plt.subplots(nrows, ncols, figsize=(ncols * width, nrows * height))
-    if nplots > 1:
+    if nplots == 1:
+        ax = [ax]
+    else:
         ax = ax.flatten()
 
     index = 0
