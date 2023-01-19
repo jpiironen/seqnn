@@ -246,7 +246,7 @@ class RNN(ModelCore):
         return torch.cat(outputs_future, dim=1)
 
 
-class Transformer(ModelCore):
+class TransformerMultivariate(ModelCore):
     def __init__(
         self,
         likelihood,
@@ -254,10 +254,9 @@ class Transformer(ModelCore):
         num_control,
         horizon_past,
         horizon_future,
-        sequence_dims=True,
         num_features=512,
         num_heads=8,
-        num_blocks=4,
+        num_blocks=2,
         num_hidden_ff=1024,
         dropout=0.1,
         learn_pos_encoding=True,
@@ -269,12 +268,7 @@ class Transformer(ModelCore):
             likelihood, num_target, num_control, horizon_past, horizon_future
         )
         self.num_features = num_features
-        self.sequence_dims = sequence_dims
-
-        if self.sequence_dims:
-            max_seq_len = horizon_past * (self.num_target + self.num_control)
-        else:
-            max_seq_len = horizon_past * (1 + self.has_controls())
+        max_seq_len = horizon_past * (1 + self.has_controls())
         self.model = GenerativeTransformer(
             max_seq_len,
             num_blocks=num_blocks,
@@ -295,140 +289,255 @@ class Transformer(ModelCore):
             # TODO: implement control embedding
             embedding_control = None
         else:
-            if self.sequence_dims:
-                embedding_target = nn.ModuleList(
-                    [nn.Linear(1, self.num_features) for _ in range(self.num_target)]
-                )
-                embedding_control = nn.ModuleList(
-                    [nn.Linear(1, self.num_features) for _ in range(self.num_control)]
-                )
-            else:
-                embedding_target = nn.Linear(self.num_target, self.num_features)
-                embedding_control = (
-                    nn.Linear(self.num_control, self.num_features)
-                    if self.has_controls()
-                    else None
-                )
+            embedding_target = nn.Linear(self.num_target, self.num_features)
+            embedding_control = (
+                nn.Linear(self.num_control, self.num_features)
+                if self.has_controls()
+                else None
+            )
         return embedding_target, embedding_control
 
     def create_readouts(self):
         num_outputs_per_target = self.likelihood.get_num_parameters()
-        if self.sequence_dims:
-            readout_target = nn.ModuleList(
-                [
-                    nn.Linear(self.num_features, num_outputs_per_target)
-                    for _ in range(self.num_target)
-                ]
-            )
-            readout_control = nn.ModuleList(
-                [
-                    # TODO: this is not quite appropriate if we have categorical controls
-                    nn.Linear(self.num_features, num_outputs_per_target)
-                    for _ in range(self.num_control)
-                ]
-            )
+        num_target_outputs_total = num_outputs_per_target * self.num_target
+        num_control_outputs_total = num_outputs_per_target * self.num_control
+        readout_target = nn.Linear(self.num_features, num_target_outputs_total)
+        if self.num_control > 0:
+            # TODO: this is not quite appropriate if we have categorical controls
+            readout_control = nn.Linear(self.num_features, num_control_outputs_total)
         else:
-            num_target_outputs_total = num_outputs_per_target * self.num_target
-            num_control_outputs_total = num_outputs_per_target * self.num_control
-            readout_target = nn.Linear(self.num_features, num_target_outputs_total)
-            if self.num_control > 0:
-                # TODO: this is not quite appropriate if we have categorical controls
-                readout_control = nn.Linear(
-                    self.num_features, num_control_outputs_total
-                )
-            else:
-                readout_control = []
+            readout_control = []
         return readout_target, readout_control
 
-    def variables_to_sequence(self, target, control, control_last=False, embed=True):
+    def variables_to_sequence(self, target, control, control_last=False):
         batch_size = target.shape[0]
-        if self.sequence_dims:
-            # given m-dimensional control u, and n-dimensional target y, this will sequence everything as
-            # (..., u_t[1], u_t[2], ..., u_t[m], y_t[1], y_t[2], ..., y_t[n], ...) or
-            # (..., y_t[1], y_t[2], ..., y_t[n], u_t[1], u_t[2], ..., u_t[m], ...) if control_last == True
-            target = [
-                embedding(target[:, :, k : k + 1]) if embed else target[:, :, k : k + 1]
-                for k, embedding in enumerate(self.embedding_target)
-            ]
-            target = torch.stack(target, dim=-1)
-            if self.has_controls():
-                control = [
-                    embedding(control[:, :, k : k + 1])
-                    if embed
-                    else control[:, :, k : k + 1]
-                    for k, embedding in enumerate(self.embedding_control)
-                ]
-                control = torch.stack(control, dim=-1)
-                vars = (target, control) if control_last else (control, target)
-                vars = torch.cat(vars, dim=3)
-            else:
-                vars = target
-            last_dim = self.num_features if embed else 1
-            sequence = vars.transpose(2, 3).contiguous().view(batch_size, -1, last_dim)
+        target = self.embedding_target(target)
+        if self.has_controls():
+            control = self.embedding_control(control)
+            vars = (target, control) if control_last else (control, target)
+            vars = torch.cat(vars, dim=2)
         else:
-            target = self.embedding_target(target) if embed else target
-            if self.has_controls():
-                control = self.embedding_control(control) if embed else control
-                vars = (target, control) if control_last else (control, target)
-                vars = torch.cat(vars, dim=2)
-            else:
-                vars = target
-            last_dim = self.num_features if embed else 1
-            sequence = vars.view(batch_size, -1, last_dim)
-
+            vars = target
+        sequence = vars.view(batch_size, -1, self.num_features)
         return sequence
 
     def read_output(self, sequence, control_last=False, offset=0):
+        assert offset in (0, 1)
         batch_size = sequence.shape[0]
-        if self.sequence_dims:
-            # combine readouts into a list and order them appropriately so that each output representation
-            # will be processed by correct readout layer.
-            #
-            # if control_last == False and offset == 0,
-            # then the input sequence is assumed to be
-            #   u_t[1], u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n],
-            # and if offset == 1,
-            #   u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n], u_{t+1}[1]
-            # etc.
-            #
-            # if control_last == True and offset 0,  the input sequence is assumed to be
-            #   y_t[1], y_t[2] ..., y_t[n], u_t[1], u_t[2], ..., u_t[m]
-            # and if offset == 1,
-            #   y_t[2] ..., y_t[n], u_t[1] u_t[2], ..., u_t[m], y_{t+1}[1]
-            # etc.
-            #
+        if self.num_control > 0:
             if control_last:
-                readouts_all = list(self.readout_target) + list(self.readout_control)
+                control_seq = sequence[:, offset::2, :]
+                target_seq = sequence[:, 1 - offset :: 2, :]
             else:
-                readouts_all = list(self.readout_control) + list(self.readout_target)
-            # here +1 comes from the fact that the prediction is always for the next symbol in the sequence
-            readouts_all = readouts_all[1 + offset :] + readouts_all[: 1 + offset]
-            seq_reshaped = sequence.view(
-                batch_size, -1, self.num_target + self.num_control, self.num_features
-            )
-            readouts = [
-                readout(seq_reshaped[:, :, k, :])
-                for k, readout in enumerate(readouts_all)
-            ]
-            seq_output = torch.stack(readouts, dim=-1)
-            seq_output = seq_output.transpose(2, 3)
-            seq_output = seq_output.reshape(batch_size, -1, seq_output.shape[3])
+                target_seq = sequence[:, offset::2, :]
+                control_seq = sequence[:, 1 - offset :: 2, :]
+            target_pred = self.readout_target(target_seq)
+            control_pred = self.readout_control(control_seq)
         else:
-            if control_last:
-                readouts_all = [self.readout_target] + ensure_list(self.readout_control)
+            target_pred = self.readout_target(sequence)
+            control_pred = None
+
+        return target_pred, control_pred
+
+    def get_loss(
+        self,
+        target_past,
+        control_past,
+        target_future,
+        control_future,
+        aux_past=None,
+        teacher_forcing=False,
+    ):
+        target_all = torch.cat((target_past, target_future), dim=1)
+        control_all = torch.cat((control_past, control_future), dim=1)
+        offset = torch.randint(1 + (self.num_control > 0), (1,)).item()
+        n = self.model.get_memory_length()
+        x_all = self.variables_to_sequence(target_all, control_all)
+
+        # prediction loss for every token conditioned on all preceding tokens
+        # (notice that the first prediction is for the second token in the sequence)
+        # TODO: should we ignore the prediction loss for the controls?
+        x = x_all[:, offset : offset + n, :]
+        output = self.model(x)
+        pred_target, pred_control = self.read_output(output, offset=offset)
+        offset_target = offset - (self.num_control > 0)
+        label_target = target_all[
+            :, 1 + offset_target : 1 + offset_target + pred_target.shape[1], :
+        ]
+        losses = self.likelihood.get_loss(pred_target, label_target).mean(dim=-1)
+        if pred_control is not None:
+            label_control = control_all[:, 1 : 1 + pred_control.shape[1], :]
+            losses += self.likelihood.get_loss(pred_control, label_control).mean(dim=-1)
+        return losses
+
+    def generate(
+        self, target_past, control_past, control_future, sample=False, **kwargs
+    ):
+        control_all = torch.cat((control_past, control_future), dim=1)
+        n_future = control_future.shape[1]
+        n_past = control_past.shape[1]
+        x = self.variables_to_sequence(
+            target_past, control_all[:, 1 : n_past + 1, :], control_last=True
+        )
+        memory_length = self.model.get_memory_length()
+
+        preds = []
+        targets_generated = []
+        for i in range(n_future):
+
+            # if the sequence length is too large, we need to crop it to the memory length of the model
+            x_crop = x if x.shape[1] <= memory_length else x[:, -memory_length:, :]
+            output = self.model(x_crop)
+            pred_target, _ = self.read_output(output, control_last=True)
+            pred = pred_target[:, -1:, :]
+            preds.append(pred)
+
+            if sample:
+                target_next = self.likelihood.sample(pred)
             else:
-                readouts_all = ensure_list(self.readout_control) + [self.readout_target]
-            readouts_all = readouts_all[1 + offset :] + readouts_all[: 1 + offset]
-            seq_reshaped = sequence.view(
-                batch_size, -1, 1 + (self.num_control > 0), self.num_features
+                target_next = self.likelihood.most_probable(pred)
+            targets_generated.append(target_next)
+
+            if i + 1 < n_future:
+                x_next = self.variables_to_sequence(
+                    target_next,
+                    control_future[:, i + 1 : i + 2, :],
+                    control_last=True,
+                )
+                x = torch.cat((x, x_next), dim=1)
+
+        if sample:
+            return torch.cat(targets_generated, dim=1)
+        return torch.cat(preds, dim=1)
+
+
+class TransformerUnivariate(ModelCore):
+    def __init__(
+        self,
+        likelihood,
+        num_target,
+        num_control,
+        horizon_past,
+        horizon_future,
+        num_features=512,
+        num_heads=8,
+        num_blocks=2,
+        num_hidden_ff=1024,
+        dropout=0.1,
+        learn_pos_encoding=True,
+    ):
+        assert (
+            horizon_future == 1
+        ), "To train Transformer, one must set horizon_future = 1"
+        super().__init__(
+            likelihood, num_target, num_control, horizon_past, horizon_future
+        )
+        self.num_features = num_features
+        max_seq_len = horizon_past * (self.num_target + self.num_control)
+        self.model = GenerativeTransformer(
+            max_seq_len,
+            num_blocks=num_blocks,
+            num_features=num_features,
+            num_heads=num_heads,
+            num_hidden_ff=num_hidden_ff,
+            dropout=dropout,
+            learn_pos_encoding=learn_pos_encoding,
+        )
+        self.embedding_target, self.embedding_control = self.create_embeddings()
+        self.readout_target, self.readout_control = self.create_readouts()
+
+    def create_embeddings(self):
+        if self.likelihood.is_discrete():
+            embedding_target = nn.Embedding(
+                self.likelihood.get_num_parameters(), self.num_features
             )
-            readouts = [
-                readout(seq_reshaped[:, :, k, :])
-                for k, readout in enumerate(readouts_all)
+            # TODO: implement control embedding
+            embedding_control = None
+        else:
+            embedding_target = nn.ModuleList(
+                [nn.Linear(1, self.num_features) for _ in range(self.num_target)]
+            )
+            embedding_control = nn.ModuleList(
+                [nn.Linear(1, self.num_features) for _ in range(self.num_control)]
+            )
+        return embedding_target, embedding_control
+
+    def create_readouts(self):
+        num_outputs_per_target = self.likelihood.get_num_parameters()
+        readout_target = nn.ModuleList(
+            [
+                nn.Linear(self.num_features, num_outputs_per_target)
+                for _ in range(self.num_target)
             ]
-            seq_output = torch.stack(readouts, dim=-1)
-            seq_output = seq_output.transpose(2, 3)
-            seq_output = seq_output.reshape(batch_size, -1, seq_output.shape[3])
+        )
+        readout_control = nn.ModuleList(
+            [
+                # TODO: this is not quite appropriate if we have categorical controls
+                nn.Linear(self.num_features, num_outputs_per_target)
+                for _ in range(self.num_control)
+            ]
+        )
+        return readout_target, readout_control
+
+    def variables_to_sequence(self, target, control, control_last=False, embed=True):
+        # given m-dimensional control u, and n-dimensional target y, this will sequence everything as
+        # (..., u_t[1], u_t[2], ..., u_t[m], y_t[1], y_t[2], ..., y_t[n], ...) or
+        # (..., y_t[1], y_t[2], ..., y_t[n], u_t[1], u_t[2], ..., u_t[m], ...) if control_last == True
+        batch_size = target.shape[0]
+        target = [
+            embedding(target[:, :, k : k + 1]) if embed else target[:, :, k : k + 1]
+            for k, embedding in enumerate(self.embedding_target)
+        ]
+        target = torch.stack(target, dim=-1)
+        if self.has_controls():
+            control = [
+                embedding(control[:, :, k : k + 1])
+                if embed
+                else control[:, :, k : k + 1]
+                for k, embedding in enumerate(self.embedding_control)
+            ]
+            control = torch.stack(control, dim=-1)
+            vars = (target, control) if control_last else (control, target)
+            vars = torch.cat(vars, dim=3)
+        else:
+            vars = target
+        last_dim = self.num_features if embed else 1
+        sequence = vars.transpose(2, 3).contiguous().view(batch_size, -1, last_dim)
+        return sequence
+
+    def read_output(self, sequence, control_last=False, offset=0):
+        # combine readouts into a list and order them appropriately so that each output representation
+        # will be processed by correct readout layer.
+        #
+        # if control_last == False and offset == 0,
+        # then the input sequence is assumed to be
+        #   u_t[1], u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n],
+        # and if offset == 1,
+        #   u_t[2], ..., u_t[m], y_t[1], y_t[2] ..., y_t[n], u_{t+1}[1]
+        # etc.
+        #
+        # if control_last == True and offset 0,  the input sequence is assumed to be
+        #   y_t[1], y_t[2] ..., y_t[n], u_t[1], u_t[2], ..., u_t[m]
+        # and if offset == 1,
+        #   y_t[2] ..., y_t[n], u_t[1] u_t[2], ..., u_t[m], y_{t+1}[1]
+        # etc.
+        #
+        batch_size = sequence.shape[0]
+        if control_last:
+            readouts_all = list(self.readout_target) + list(self.readout_control)
+        else:
+            readouts_all = list(self.readout_control) + list(self.readout_target)
+        # here +1 comes from the fact that the prediction is always for the next symbol in the sequence
+        readouts_all = readouts_all[1 + offset :] + readouts_all[: 1 + offset]
+        seq_reshaped = sequence.view(
+            batch_size, -1, self.num_target + self.num_control, self.num_features
+        )
+        readouts = [
+            readout(seq_reshaped[:, :, k, :]) for k, readout in enumerate(readouts_all)
+        ]
+        seq_output = torch.stack(readouts, dim=-1)
+        seq_output = seq_output.transpose(2, 3)
+        seq_output = seq_output.reshape(batch_size, -1, seq_output.shape[3])
         return seq_output
 
     def get_loss(
@@ -442,10 +551,7 @@ class Transformer(ModelCore):
     ):
         target_all = torch.cat((target_past, target_future), dim=1)
         control_all = torch.cat((control_past, control_future), dim=1)
-        if self.sequence_dims:
-            offset = torch.randint(self.num_target + self.num_control, (1,)).item()
-        else:
-            offset = torch.randint(1 + (self.num_control > 0), (1,)).item()
+        offset = torch.randint(self.num_target + self.num_control, (1,)).item()
         n = self.model.get_memory_length()
         x_all = self.variables_to_sequence(target_all, control_all)
         y_all = self.variables_to_sequence(target_all, control_all, embed=False)
@@ -474,59 +580,30 @@ class Transformer(ModelCore):
         preds = []
         targets_generated = []
         for i in range(n_future):
-
-            if self.sequence_dims:
-
-                # target_next = []
-                pred = []
-                for k in range(self.num_target):
-                    # generate target variables one at a time
-                    x_crop = (
-                        x if x.shape[1] <= memory_length else x[:, -memory_length:, :]
-                    )
-                    output = self.model(x_crop)
-                    pred_k = self.read_output(output, control_last=True, offset=k)[
-                        :, -1:, :
-                    ]
-                    pred.append(pred_k)
-                    if sample:
-                        target_k_next = self.likelihood.sample(pred_k)
-                    else:
-                        target_k_next = self.likelihood.most_probable(pred_k)
-
-                    x_next = self.embedding_target[k](target_k_next)
-                    x = torch.cat((x, x_next), dim=1)
-                pred = torch.stack(pred, dim=-1).transpose(2, 3)
-                preds.append(pred)
-
-                # add controls into the sequence one-by-one
-                if i + 1 < n_future:
-                    control_next = control_future[:, i + 1 : i + 2, :]
-                    for k in range(self.num_control):
-                        x_next = self.embedding_control[k](
-                            control_next[:, :, k : k + 1]
-                        )
-                        x = torch.cat((x, x_next), dim=1)
-            else:
-
-                # if the sequence length is too large, we need to crop it to the memory length of the model
+            pred = []
+            for k in range(self.num_target):
+                # generate target variables one at a time
                 x_crop = x if x.shape[1] <= memory_length else x[:, -memory_length:, :]
                 output = self.model(x_crop)
-                pred = self.read_output(output, control_last=True)[:, -1:, :]
-                preds.append(pred)
-
+                pred_k = self.read_output(output, control_last=True, offset=k)[
+                    :, -1:, :
+                ]
+                pred.append(pred_k)
                 if sample:
-                    target_next = self.likelihood.sample(pred)
+                    target_k_next = self.likelihood.sample(pred_k)
                 else:
-                    target_next = self.likelihood.most_probable(pred)
-                targets_generated.append(target_next)
+                    target_k_next = self.likelihood.most_probable(pred_k)
 
-                if i + 1 < n_future:
-                    x_next = self.variables_to_sequence(
-                        target_next,
-                        control_future[:, i + 1 : i + 2, :],
-                        control_last=True,
-                    )
+                x_next = self.embedding_target[k](target_k_next)
+                x = torch.cat((x, x_next), dim=1)
+            pred = torch.stack(pred, dim=-1).transpose(2, 3)
+            preds.append(pred)
+
+            # add controls into the sequence one-by-one
+            if i + 1 < n_future:
+                control_next = control_future[:, i + 1 : i + 2, :]
+                for k in range(self.num_control):
+                    x_next = self.embedding_control[k](control_next[:, :, k : k + 1])
                     x = torch.cat((x, x_next), dim=1)
 
         if sample:

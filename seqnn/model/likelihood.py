@@ -73,6 +73,8 @@ class LikGaussian(Likelihood):
 
     def get_loss(self, model_output, target):
         p = self.parametrize_model_output(model_output)
+        assert p["mean"].shape == p["scale"].shape
+        assert p["mean"].shape == target.shape
         loss = -torch.distributions.Normal(p["mean"], p["scale"]).log_prob(target)
         return loss
 
