@@ -117,6 +117,7 @@ class SeqNN:
         epochs=None,
         steps=None,
         overfit_batches=0.0,
+        num_batches_validation=None,
         num_batches_scaler_train=None,
         progressbar=True,
         dev_run=False,
@@ -127,7 +128,9 @@ class SeqNN:
         ), "Either epochs or steps must be specified"
         steps = steps if steps is not None else -1
         loader_train = self.data_to_loader(data_train, train=True)
-        loader_valid = self.data_to_loader(data_valid)
+        loader_valid = self.data_to_loader(
+            data_valid, num_batches=num_batches_validation
+        )
         self.update_scalers(loader_train, limit_batches=num_batches_scaler_train)
         trainer = pl.Trainer(
             fast_dev_run=dev_run,
@@ -155,7 +158,7 @@ class SeqNN:
                     break
         self.scalers_fitted = True
 
-    def data_to_loader(self, data, train=False):
+    def data_to_loader(self, data, num_batches=None, train=False):
         if isinstance(data, torch.utils.data.DataLoader):
             # do not modify if already got data loader as an input
             return data
@@ -172,12 +175,24 @@ class SeqNN:
                 shuffle=True,
                 drop_last=True,
             )
-        return torch.utils.data.DataLoader(
-            dataset,
-            batch_size=self.config.training.batch_size_valid,
-            shuffle=False,
-            drop_last=False,
-        )
+        if num_batches is not None:
+            # limit number of batches for validation, but always draw the subset randomly
+            sampler = torch.utils.data.RandomSampler(
+                dataset, num_samples=num_batches * self.config.training.batch_size_valid
+            )
+            return torch.utils.data.DataLoader(
+                dataset,
+                batch_size=self.config.training.batch_size_valid,
+                sampler=sampler,
+            )
+        else:
+            # use all the data for validation, no need for shuffling
+            return torch.utils.data.DataLoader(
+                dataset,
+                batch_size=self.config.training.batch_size_valid,
+                shuffle=False,
+                drop_last=False,
+            )
 
     def get_dataset(self, data, horizon_future=None, past_only=False):
         if data is None:
