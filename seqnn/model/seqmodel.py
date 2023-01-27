@@ -105,9 +105,10 @@ class SeqNNLightning(pl.LightningModule):
 
 
 class SeqNN:
-    def __init__(self, config, init_seed=True):
+    def __init__(self, config, init_seed=True, fit_scalers=True):
         self.config = config
         self.model = SeqNNLightning(config, init_seed)
+        self.scalers_fitted = not fit_scalers
 
     def train(
         self,
@@ -116,6 +117,7 @@ class SeqNN:
         epochs=None,
         steps=None,
         overfit_batches=0.0,
+        num_batches_scaler_train=None,
         progressbar=True,
         dev_run=False,
         logdir=None,
@@ -126,7 +128,7 @@ class SeqNN:
         steps = steps if steps is not None else -1
         loader_train = self.data_to_loader(data_train, train=True)
         loader_valid = self.data_to_loader(data_valid)
-        self.fit_scalers(loader_train)
+        self.update_scalers(loader_train, limit_batches=num_batches_scaler_train)
         trainer = pl.Trainer(
             fast_dev_run=dev_run,
             gradient_clip_val=self.config.training.max_grad_norm,
@@ -145,9 +147,13 @@ class SeqNN:
         )
         trainer.fit(self.model, loader_train, loader_valid)
 
-    def fit_scalers(self, dataloader):
-        for past, future in dataloader:
-            self.model.scaler.update_stats(past, future)
+    def update_scalers(self, dataloader, limit_batches=None):
+        if not self.scalers_fitted:
+            for i, (past, future) in enumerate(dataloader):
+                self.model.scaler.update_stats(past, future)
+                if limit_batches is not None and i + 1 == limit_batches:
+                    break
+        self.scalers_fitted = True
 
     def data_to_loader(self, data, train=False):
         if isinstance(data, torch.utils.data.DataLoader):
@@ -224,12 +230,12 @@ class SeqNN:
             for key, tensor in pred_params.items()
         }
         if native:
+
             def to_native(future_dict):
                 _, fut_dict_nat = self.model.scaler.to_native(past, future_dict)
                 return fut_dict_nat
-            params_per_target = likelihood.to_native(
-                params_per_target, to_native
-            )
+
+            params_per_target = likelihood.to_native(params_per_target, to_native)
         return params_per_target
 
     def save(self, dir):
@@ -242,7 +248,7 @@ class SeqNN:
     def load(dir):
         dir = pathlib.Path(dir)
         config = SeqNNConfig.load(dir / "config.yaml")
-        model = SeqNN(config, init_seed=False)
+        model = SeqNN(config, init_seed=False, fit_scalers=False)
         load_torch_state(model.model.model_core, dir / "model_core.pt")
         load_torch_state(model.model.scaler, dir / "scaler.pt")
         return model
