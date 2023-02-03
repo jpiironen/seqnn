@@ -31,7 +31,7 @@ class SeqNNLightning(pl.LightningModule):
             args = scaler_spec["args"]
             ndim = len(config.task.grouping[group])
             scalers[group] = get_cls(cls_name)(ndim, **args)
-        return seqnn.data.scalers.ScalerCollection(scalers)
+        return seqnn.data.scalers.PastFutureScalerCollection(scalers)
 
     def forward(self, *args, **kwargs):
         return self.model_core(*args, **kwargs)
@@ -53,16 +53,15 @@ class SeqNNLightning(pl.LightningModule):
             if p.grad is not None:
                 p.grad.zero_()
 
-    def to_scaled(self, seq):
-        return self.scaler.to_scaled(seq)
+    def to_scaled(self, past, future):
+        return self.scaler.to_scaled(past, future)
 
-    def to_native(self, seq):
-        return self.scaler.to_native(seq)
+    def to_native(self, past, future):
+        return self.scaler.to_native(past, future)
 
     def training_step(self, batch, batch_idx):
         past, future = batch
-        past = self.to_scaled(past)
-        future = self.to_scaled(future)
+        past, future = self.to_scaled(past, future)
         (
             target_past,
             control_past,
@@ -84,8 +83,7 @@ class SeqNNLightning(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         past, future = batch
-        past = self.to_scaled(past)
-        future = self.to_scaled(future)
+        past, future = self.to_scaled(past, future)
         (
             target_past,
             control_past,
@@ -107,9 +105,10 @@ class SeqNNLightning(pl.LightningModule):
 
 
 class SeqNN:
-    def __init__(self, config, init_seed=True):
+    def __init__(self, config, init_seed=True, fit_scalers=True):
         self.config = config
         self.model = SeqNNLightning(config, init_seed)
+        self.scalers_fitted = not fit_scalers
 
     def train(
         self,
@@ -118,6 +117,8 @@ class SeqNN:
         epochs=None,
         steps=None,
         overfit_batches=0.0,
+        num_batches_validation=None,
+        num_batches_scaler_train=None,
         progressbar=True,
         dev_run=False,
         logdir=None,
@@ -127,8 +128,10 @@ class SeqNN:
         ), "Either epochs or steps must be specified"
         steps = steps if steps is not None else -1
         loader_train = self.data_to_loader(data_train, train=True)
-        loader_valid = self.data_to_loader(data_valid)
-        self.fit_scalers(loader_train)
+        loader_valid = self.data_to_loader(
+            data_valid, num_batches=num_batches_validation
+        )
+        self.update_scalers(loader_train, limit_batches=num_batches_scaler_train)
         trainer = pl.Trainer(
             fast_dev_run=dev_run,
             gradient_clip_val=self.config.training.max_grad_norm,
@@ -147,12 +150,15 @@ class SeqNN:
         )
         trainer.fit(self.model, loader_train, loader_valid)
 
-    def fit_scalers(self, dataloader):
-        for batch in dataloader:
-            for seq in batch:
-                self.model.scaler.update_stats(seq)
+    def update_scalers(self, dataloader, limit_batches=None):
+        if not self.scalers_fitted:
+            for i, (past, future) in enumerate(dataloader):
+                self.model.scaler.update_stats(past, future)
+                if limit_batches is not None and i + 1 == limit_batches:
+                    break
+        self.scalers_fitted = True
 
-    def data_to_loader(self, data, train=False):
+    def data_to_loader(self, data, num_batches=None, train=False):
         if isinstance(data, torch.utils.data.DataLoader):
             # do not modify if already got data loader as an input
             return data
@@ -169,12 +175,24 @@ class SeqNN:
                 shuffle=True,
                 drop_last=True,
             )
-        return torch.utils.data.DataLoader(
-            dataset,
-            batch_size=self.config.training.batch_size_valid,
-            shuffle=False,
-            drop_last=False,
-        )
+        if num_batches is not None:
+            # limit number of batches for validation, but always draw the subset randomly
+            sampler = torch.utils.data.RandomSampler(
+                dataset, num_samples=num_batches * self.config.training.batch_size_valid
+            )
+            return torch.utils.data.DataLoader(
+                dataset,
+                batch_size=self.config.training.batch_size_valid,
+                sampler=sampler,
+            )
+        else:
+            # use all the data for validation, no need for shuffling
+            return torch.utils.data.DataLoader(
+                dataset,
+                batch_size=self.config.training.batch_size_valid,
+                shuffle=False,
+                drop_last=False,
+            )
 
     def get_dataset(self, data, horizon_future=None, past_only=False):
         if data is None:
@@ -212,8 +230,7 @@ class SeqNN:
 
     def predict(self, past, future, native=True):
         self.model.eval()
-        past = self.model.to_scaled(past)
-        future = self.model.to_scaled(future)
+        past, future = self.model.to_scaled(past, future)
         (
             target_past,
             control_past,
@@ -228,9 +245,12 @@ class SeqNN:
             for key, tensor in pred_params.items()
         }
         if native:
-            params_per_target = likelihood.to_native(
-                params_per_target, self.model.scaler
-            )
+
+            def to_native(future_dict):
+                _, fut_dict_nat = self.model.scaler.to_native(past, future_dict)
+                return fut_dict_nat
+
+            params_per_target = likelihood.to_native(params_per_target, to_native)
         return params_per_target
 
     def save(self, dir):
@@ -243,7 +263,7 @@ class SeqNN:
     def load(dir):
         dir = pathlib.Path(dir)
         config = SeqNNConfig.load(dir / "config.yaml")
-        model = SeqNN(config, init_seed=False)
+        model = SeqNN(config, init_seed=False, fit_scalers=False)
         load_torch_state(model.model.model_core, dir / "model_core.pt")
         load_torch_state(model.model.scaler, dir / "scaler.pt")
         return model

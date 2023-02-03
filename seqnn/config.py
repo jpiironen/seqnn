@@ -41,6 +41,7 @@ class SeqNNConfig(Config):
         optimizer_args={"lr": 0.001, "momentum": 0.9},
         lr_scheduler="StepLR",
         lr_scheduler_args={"gamma": 1.0, "step_size": 2000},
+        scaler_args={},
         batch_size=32,
         batch_size_valid=32,
         validate_every_n_steps=100,
@@ -75,8 +76,8 @@ class SeqNNConfig(Config):
         scaler_cfg = Config(
             groups={
                 group: dict(
-                    cls="seqnn.data.scalers.MinMaxScaler",
-                    args={},
+                    cls="seqnn.data.scalers.PastFutureScaler",
+                    args=scaler_args,
                 )
                 for group in task_cfg.grouping.keys()
                 if group not in task_cfg.controls_cat

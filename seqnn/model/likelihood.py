@@ -12,7 +12,7 @@ class Likelihood:
     def parametrize_model_output(self, model_output):
         raise NotImplementedError
 
-    def to_native(self, param, scaler):
+    def to_native(self, param, to_native_lambda):
         raise NotImplementedError
 
     def get_loss(self, model_output, target):
@@ -39,21 +39,21 @@ class LikGaussian(Likelihood):
         scale = self.real_to_positive(scale_unconstrained)
         return {"mean": mean, "scale": scale}
 
-    def to_native(self, param, scaler):
+    def to_native(self, param, to_native_lambda):
         param_native = {}
-        param_native["mean"] = scaler.to_native(param["mean"])
+        param_native["mean"] = to_native_lambda(param["mean"])
         if isinstance(param["mean"], dict) and isinstance(param["scale"], dict):
             mean_plus_scale = {
                 key: param["mean"][key] + param["scale"][key] for key in param["mean"]
             }
-            mean_plus_scale_native = scaler.to_native(mean_plus_scale)
+            mean_plus_scale_native = to_native_lambda(mean_plus_scale)
             param_native["scale"] = {
                 key: mean_plus_scale_native[key] - param_native["mean"][key]
                 for key in mean_plus_scale_native
             }
         else:
             mean_plus_scale = param["mean"] + param["scale"]
-            mean_plus_scale_native = scaler.to_native(mean_plus_scale)
+            mean_plus_scale_native = to_native_lambda(mean_plus_scale)
             param_native["scale"] = mean_plus_scale_native - param_native["mean"]
         return param_native
 
