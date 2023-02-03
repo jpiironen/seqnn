@@ -68,13 +68,17 @@ class SeqNNLightning(pl.LightningModule):
             target_future,
             control_future,
         ) = self.data_handler.prepare_data(past, future, augment=True)
-        teacher_forcing = np.random.rand() < self.config.training.teacher_forcing_prob
+        teacher_forcing = np.random.rand() < self.config.training.prob_teacher_forcing
+        stochastic_rollout = (
+            np.random.rand() < self.config.training.prob_stochastic_rollout
+        )
         losses = self.model_core.get_loss(
             target_past,
             control_past,
             target_future,
             control_future,
             teacher_forcing=teacher_forcing,
+            stochastic_rollout=stochastic_rollout,
         )
         loss = losses.mean()
         self.log("train_loss", loss.item())
@@ -238,7 +242,9 @@ class SeqNN:
             control_future,
         ) = self.model.data_handler.prepare_data(past, future, augment=False)
         likelihood = self.get_likelihood()
-        pred = self.model.generate(target_past, control_past, control_future, sample=False)
+        pred = self.model.generate(
+            target_past, control_past, control_future, sample=False
+        )
         pred_params = likelihood.parametrize_model_output(pred)
         params_per_target = {
             key: self.model.data_handler.split_target(tensor)

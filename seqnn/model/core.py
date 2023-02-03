@@ -51,7 +51,13 @@ class ModelCore(nn.Module):
         return torch.split(tensor, (self.horizon_past, self.horizon_future), dim=1)
 
     def forward(
-        self, target_past, control_past, control_future, target_future=None, **kwargs
+        self,
+        target_past,
+        control_past,
+        control_future,
+        target_future=None,
+        sample=False,
+        **kwargs
     ):
         raise NotImplementedError
 
@@ -68,6 +74,7 @@ class ModelCore(nn.Module):
         control_future,
         aux_past=None,
         teacher_forcing=False,
+        stochastic_rollout=False,
     ):
         output = self(
             target_past,
@@ -75,6 +82,7 @@ class ModelCore(nn.Module):
             control_future,
             aux_past=aux_past,
             target_future=target_future,
+            sample=stochastic_rollout,
             teacher_forcing=teacher_forcing,
         )
         losses = self.likelihood.get_loss(output, target_future)
@@ -221,6 +229,7 @@ class RNN(ModelCore):
         control_future,
         target_future=None,
         teacher_forcing=False,
+        sample=False,
         **kwargs
     ):
 
@@ -239,11 +248,25 @@ class RNN(ModelCore):
             output = self.readout(self.dropout(output))
             if teacher_forcing:
                 y = target_future[:, i : i + 1, :]
-            else:
+            elif sample:
                 y = self.likelihood.sample(output)
+            else:
+                y = self.likelihood.most_probable(output)
             outputs_future.append(output)
 
         return torch.cat(outputs_future, dim=1)
+
+    def generate(
+        self, target_past, control_past, control_future, sample=False, **kwargs
+    ):
+        return self(
+            target_past,
+            control_past,
+            control_future,
+            target_future=None,
+            sample=sample,
+            **kwargs,
+        )
 
 
 class TransformerMultivariate(ModelCore):
@@ -347,6 +370,7 @@ class TransformerMultivariate(ModelCore):
         control_future,
         aux_past=None,
         teacher_forcing=False,
+        stochastic_rollout=False,
     ):
         target_all = torch.cat((target_past, target_future), dim=1)
         control_all = torch.cat((control_past, control_future), dim=1)

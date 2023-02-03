@@ -45,7 +45,8 @@ class SeqNNConfig(Config):
         batch_size=32,
         batch_size_valid=32,
         validate_every_n_steps=100,
-        teacher_forcing_prob=0.5,
+        prob_teacher_forcing=0.5,
+        prob_stochastic_rollout=0.5,
         max_grad_norm=100.0,
         seed=42,
     ):
@@ -96,7 +97,8 @@ class SeqNNConfig(Config):
             batch_size_valid=batch_size_valid,
             max_grad_norm=max_grad_norm,
             seed=seed,
-            teacher_forcing_prob=teacher_forcing_prob,
+            prob_teacher_forcing=prob_teacher_forcing,
+            prob_stochastic_rollout=prob_stochastic_rollout,
             validate_every_n_steps=validate_every_n_steps,
         )
         super().__init__(
