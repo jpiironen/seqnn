@@ -21,6 +21,9 @@ class Likelihood:
     def get_loss(self, model_output, target):
         raise NotImplementedError
 
+    def get_loss_parametrized(self, model_output_parametrized, target):
+        raise NotImplementedError
+
     def sample(self, model_output):
         raise NotImplementedError
 
@@ -73,6 +76,10 @@ class LikGaussian(Likelihood):
 
     def get_loss(self, model_output, target):
         p = self.parametrize_model_output(model_output)
+        return self.get_loss_parametrized(p, target)
+
+    def get_loss_parametrized(self, model_output_parametrized, target):
+        p = model_output_parametrized
         assert p["mean"].shape == p["scale"].shape
         assert p["mean"].shape == target.shape
         loss = -torch.distributions.Normal(p["mean"], p["scale"]).log_prob(target)

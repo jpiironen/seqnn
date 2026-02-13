@@ -4,6 +4,7 @@ import pandas as pd
 import torch
 import torch.utils.data
 import pytorch_lightning as pl
+from collections import defaultdict
 
 import seqnn.data.scalers
 from seqnn.config import SeqNNConfig
@@ -87,25 +88,71 @@ class SeqNNLightning(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         past, future = batch
-        past, future = self.to_scaled(past, future)
+        past_scaled, future_scaled = self.to_scaled(past, future)
         (
             target_past,
             control_past,
             target_future,
             control_future,
-        ) = self.data_handler.prepare_data(past, future, augment=False)
-        losses = self.model_core.get_loss(
+        ) = self.data_handler.prepare_data(past_scaled, future_scaled, augment=False)
+        losses_valid = self.model_core.get_loss(
             target_past,
             control_past,
             target_future,
             control_future,
             teacher_forcing=False,
         )
-        return losses
+        losses_gen = self.get_generative_loss(past, future)
+        return losses_valid, losses_gen
 
     def validation_epoch_end(self, outputs):
-        losses = torch.cat(outputs, dim=0)
-        self.log("valid_loss", losses.mean().item(), prog_bar=True)
+        losses_valid, losses_gen = zip(*outputs)
+        losses_valid = torch.cat(losses_valid, dim=0)
+        losses_gen = torch.cat(losses_gen, dim=0)
+        self.log("valid_loss", losses_valid.mean().item(), prog_bar=True)
+        self.log("generative_loss", losses_gen.mean().item(), prog_bar=True)
+    
+    def get_generative_loss(self, past, future):
+        pred = self.predict(past, future)
+        pred_params_per_group = defaultdict(dict)
+        for target_group in self.config.task.targets:
+            for key, value in pred.items():
+                pred_params_per_group[target_group][key] = value[target_group]
+        loss = 0.0
+        for target_group, pred_params in pred_params_per_group.items():
+            losses = self.model_core.likelihood.get_loss_parametrized(pred_params, future[target_group])
+            # take mean over variables and future horizon, but not over batches
+            loss += losses.mean(dim=-1).mean(dim=-1)
+        return loss
+                
+    
+    def predict(self, past, future, native=True):
+        self.eval()
+        past, future = self.to_scaled(past, future)
+        (
+            target_past,
+            control_past,
+            _,
+            control_future,
+        ) = self.data_handler.prepare_data(past, future, augment=False)
+        
+        likelihood = self.model_core.likelihood
+        pred = self.generate(
+            target_past, control_past, control_future, sample=False
+        )
+        pred_params = likelihood.parametrize_model_output(pred)
+        params_per_target = {
+            key: self.data_handler.split_target(tensor)
+            for key, tensor in pred_params.items()
+        }
+        if native:
+
+            def to_native(future_dict):
+                _, fut_dict_nat = self.to_native(past, future_dict)
+                return fut_dict_nat
+
+            params_per_target = likelihood.to_native(params_per_target, to_native)
+        return params_per_target
 
 
 class SeqNN:
@@ -233,6 +280,8 @@ class SeqNN:
         return self.model.data_handler.get_group_and_index(tag)
 
     def predict(self, past, future, native=True):
+        # TODO: FIGURE OUT IF THIS CODE CAN BE MOVED INSIDE THE LIGHTING CLASS SO THAT 
+        # IT CAN BE USED TO COMPUTE AN EVALUATION LOSS THAT IS COMPARABLE BETWEEN ALL SETUPS
         self.model.eval()
         past, future = self.model.to_scaled(past, future)
         (
