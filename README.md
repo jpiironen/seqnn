@@ -1,7 +1,7 @@
 # SeqNN
 Codebase for experimenting with different types of neural network models for sequential data. The main purpose is to support models that can be used for model based reinforcement learning and control. 
 
-NOTE: The codebase is mostly educational and meant as a sandbox for playing out with ideas, hence the documentation is very much incomplete. Not under active development anymore.
+NOTE: The codebase is mostly meant as a sandbox for playing out with ideas, hence the documentation is very much incomplete. Not under active development anymore.
 
 <figure>
 <img src="https://jpiironen.github.io/material/seqnn/gym/CartPole-v1/episode0.gif" width="400"/>
